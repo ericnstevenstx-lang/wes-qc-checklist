@@ -1,5 +1,3 @@
-import QCChecklist from "./QCChecklist";
-
-export default function Home() {
-  return <QCChecklist />;
-}
+"use client";
+import QCApp from "./QCApp";
+export default function Page(){return <QCApp/>;}
