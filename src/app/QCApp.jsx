@@ -9,6 +9,8 @@ let loc=false;
 async function db(p,o={}){const r=await fetch(`${SB}/rest/v1/${p}`,{...o,headers:{...H,...(o.headers||{})}});if(!r.ok)throw new Error(`${r.status}`);const t=await r.text();return t?JSON.parse(t):null;}
 
 /* ── Constants ─────────────────────────────────────────── */
+const EQ=["Switchgear","Panelboard","Transformer","Circuit Breaker","Motor Control Center (MCC)","Bus Duct","Disconnect Switch","UPS System","PDU","RPP (Remote Power Panel)","ATS / Transfer Switch","VFD / Drive","Motor Starter","Control Transformer","Trip Unit","Relay","CT / PT","Meter","Other"];
+const MFR=["Eaton / Cutler-Hammer","Siemens","Square D / Schneider","ABB","GE","Westinghouse","ITE","Federal Pacific","Allen-Bradley / Rockwell","Mitsubishi","Yaskawa","Danfoss","Liebert / Vertiv","APC / Schneider","ABL Sursum","Other"];
 const STAT=[
   {v:"received",l:"Received",c:"#6b7280"},{v:"in_qc",l:"In QC",c:"#f59e0b"},
   {v:"qc_pass",l:"QC Pass",c:"#16a34a"},{v:"qc_fail",l:"QC Fail",c:"#dc2626"},
@@ -19,7 +21,6 @@ const STAT=[
 ];
 const sc={};STAT.forEach(s=>sc[s.v]=s.c);
 const sl={};STAT.forEach(s=>sl[s.v]=s.l);
-const LOC=[{v:"main_warehouse",l:"Main WH"},{v:"satellite_1",l:"Sat 1"},{v:"satellite_2",l:"Sat 2"}];
 const RO=[{v:"pass",l:"PASS",c:"#16a34a",i:"\u2713"},{v:"fail",l:"FAIL",c:"#dc2626",i:"\u2717"},{v:"na",l:"N/A",c:"#94a3b8",i:"\u2014"},{v:"flag",l:"FLAG",c:"#f59e0b",i:"\u26a0"}];
 const IT=[{v:"incoming",l:"Incoming"},{v:"pre_refurb",l:"Pre-Refurb"},{v:"post_refurb",l:"Post-Refurb"},{v:"outgoing",l:"Outgoing"}];
 
@@ -33,7 +34,6 @@ const CL=[
   {s:"Safety & Compliance",items:["Arc flash labels current","Warning labels in place","NFPA 70B compliance","UL / CSA listing verified","PPE requirements posted","LOTO provisions functional","Equipment grounding verified"]},
   {s:"Final / Cosmetic",items:["Cleaned inside and out","Touch-up paint applied","WES inventory label applied","Serial number tag verified","Photos taken and filed","Shipping prep (if outgoing)"]},
 ];
-
 const today=()=>new Date().toISOString().slice(0,10);
 
 /* ── Styles ─────────────────────────────────────────────── */
@@ -53,12 +53,11 @@ function Section({title,children,badge,defaultOpen=false,color="#475569",count,c
   </div>);
 }
 
-/* ── Photo compression ─────────────────────────────────── */
 function compressImage(file,maxW=1200,q=0.7){return new Promise(r=>{const rd=new FileReader();rd.onload=e=>{const img=new Image();img.onload=()=>{const c=document.createElement("canvas");const ratio=Math.min(maxW/img.width,maxW/img.height,1);c.width=img.width*ratio;c.height=img.height*ratio;c.getContext("2d").drawImage(img,0,0,c.width,c.height);r(c.toDataURL("image/jpeg",q));};img.src=e.target.result;};rd.readAsDataURL(file);});}
 
 /* ════════════════════════════════════════════════════════ */
 export default function QCApp() {
-  const [view,setView]=useState("inventory");
+  const [view,setView]=useState("inventory"); // inventory | form | inspect | history
   const [msg,setMsg]=useState(null);
   const [saving,setSaving]=useState(false);
 
@@ -67,16 +66,24 @@ export default function QCApp() {
   const [invLoading,setInvLoading]=useState(false);
   const [invSearch,setInvSearch]=useState("");
   const [invFilterStatus,setInvFilterStatus]=useState("");
-
-  const loadInventory=useCallback(async()=>{
-    setInvLoading(true);
-    try{const data=await db("inventory_items?select=*&order=created_at.desc&limit=200");if(data)setInv(data);}catch{loc=true;}
-    setInvLoading(false);
-  },[]);
+  const loadInventory=useCallback(async()=>{setInvLoading(true);try{const d=await db("inventory_items?select=*&order=created_at.desc&limit=200");if(d)setInv(d);}catch{loc=true;}setInvLoading(false);},[]);
   useEffect(()=>{loadInventory();},[loadInventory]);
 
+  /* ── Orders ── */
+  const [orders,setOrders]=useState([]);
+  const loadOrders=useCallback(async()=>{try{const d=await db("orders?select=*&order=created_at.desc&limit=50");if(d)setOrders(d);}catch{}},[]);
+  useEffect(()=>{loadOrders();},[loadOrders]);
+
+  /* ── Equipment form (manual entry OR from inventory) ── */
+  const [selItem,setSelItem]=useState(null); // inventory item if selected
+  const [eqForm,setEqForm]=useState({
+    equipmentType:"",manufacturer:"",modelNumber:"",serialNumber:"",
+    voltageRating:"",amperageRating:"",kvaRating:"",catalogNumber:"",
+    jobSite:"",customerName:"",sourceLocation:"",
+  });
+  const uf=(k,v)=>setEqForm(p=>({...p,[k]:v}));
+
   /* ── Inspection state ── */
-  const [selItem,setSelItem]=useState(null);
   const [inspForm,setInspForm]=useState({inspectedBy:"",inspectionDate:today(),inspectionType:"incoming",notes:""});
   const [checks,setChecks]=useState([]);
   const [megger,setMegger]=useState({aToB:"",bToC:"",cToA:"",aToG:"",bToG:"",cToG:"",testV:"1000"});
@@ -84,10 +91,12 @@ export default function QCApp() {
   const [deficiencies,setDeficiencies]=useState([]);
   const [photos,setPhotos]=useState([]);
   const [stickerNum,setStickerNum]=useState("");
+  const [orderNum,setOrderNum]=useState("");
 
   /* ── History ── */
   const [history,setHistory]=useState([]);
   const [histLoading,setHistLoading]=useState(false);
+  const [histExpId,setHistExpId]=useState(null);
   const loadHistory=useCallback(async()=>{setHistLoading(true);try{const d=await db("qc_inspections?select=*&order=created_at.desc&limit=100");if(d)setHistory(d);}catch{}setHistLoading(false);},[]);
 
   const initChecks=()=>CL.flatMap((sec,si)=>sec.items.map((item,ii)=>({section:sec.s,checkItem:item,result:"not_checked",notes:"",sort:si*100+ii})));
@@ -100,34 +109,73 @@ export default function QCApp() {
       }}catch{}
   },[]);
 
-  const startInspection=async(item)=>{
-    setSelItem(item);setChecks(initChecks());setMegger({aToB:"",bToC:"",cToA:"",aToG:"",bToG:"",cToG:"",testV:"1000"});
-    setDeficiencies([]);setPhotos([]);setStickerNum("");setInspForm({inspectedBy:"",inspectionDate:today(),inspectionType:"incoming",notes:""});
-    loadTorqueSpecs(item.manufacturer,item.equipment_type);
+  /* ── Start from inventory item ── */
+  const startFromInventory=async(item)=>{
+    setSelItem(item);
+    setEqForm({equipmentType:item.equipment_type||"",manufacturer:item.manufacturer||"",modelNumber:item.model_number||"",serialNumber:item.serial_number||"",voltageRating:item.voltage_rating||"",amperageRating:item.amperage_rating||"",kvaRating:item.kva_rating||"",catalogNumber:item.catalog_number||"",jobSite:item.source_job_site||"",customerName:item.customer_origin||"",sourceLocation:item.location||""});
+    resetInspection(item.manufacturer,item.equipment_type);
     try{await db(`inventory_items?id=eq.${item.id}`,{method:"PATCH",body:JSON.stringify({status:"in_qc"})});setInv(p=>p.map(i=>i.id===item.id?{...i,status:"in_qc"}:i));}catch{}
     setView("inspect");
   };
 
+  /* ── Start from manual form ── */
+  const startFromForm=()=>{
+    if(!eqForm.equipmentType){setMsg({t:"error",m:"Equipment type required"});return;}
+    setSelItem(null);
+    resetInspection(eqForm.manufacturer,eqForm.equipmentType);
+    setView("inspect");
+  };
+
+  const resetInspection=(mfr,eqType)=>{
+    setChecks(initChecks());
+    setMegger({aToB:"",bToC:"",cToA:"",aToG:"",bToG:"",cToG:"",testV:"1000"});
+    setDeficiencies([]);setPhotos([]);setStickerNum("");setOrderNum("");
+    setInspForm({inspectedBy:"",inspectionDate:today(),inspectionType:"incoming",notes:""});
+    loadTorqueSpecs(mfr,eqType);
+  };
+
+  /* ── Update inventory status ── */
   const updateInvStatus=async(id,status,extra={})=>{
     try{await db(`inventory_items?id=eq.${id}`,{method:"PATCH",body:JSON.stringify({status,...extra})});setInv(p=>p.map(i=>i.id===id?{...i,status,...extra}:i));setMsg({t:"success",m:`${sl[status]||status}`});}catch(e){setMsg({t:"error",m:e.message});}
   };
 
   const addPhoto=async(file)=>{if(!file)return;const c=await compressImage(file);let url=c;try{const b=await(await fetch(c)).blob();const fn=`qc_${Date.now()}_${Math.random().toString(36).slice(2,8)}.jpg`;const u=await fetch(`${SB}/storage/v1/object/item-photos/${fn}`,{method:"POST",headers:{apikey:SK,Authorization:`Bearer ${SK}`,"Content-Type":"image/jpeg"},body:b});if(u.ok)url=`${SB}/storage/v1/object/public/item-photos/${fn}`;}catch{}setPhotos(p=>[...p,url]);};
 
+  /* ── Save inspection ── */
   const saveInspection=async(result)=>{
     if(!inspForm.inspectedBy){setMsg({t:"error",m:"Inspector name required"});return;}
     setSaving(true);const id=`QC-${Date.now().toString(36).toUpperCase()}`;
     const statusMap={pass:"qc_pass",fail:"qc_fail",conditional:"conditional"};
     try{
-      await db("qc_inspections",{method:"POST",body:JSON.stringify({id,equipment_type:selItem.equipment_type,manufacturer:selItem.manufacturer,model_number:selItem.model_number,serial_number:selItem.serial_number,voltage_rating:selItem.voltage_rating,amperage_rating:selItem.amperage_rating,inspected_by:inspForm.inspectedBy,inspection_date:inspForm.inspectionDate,inspection_type:inspForm.inspectionType,overall_result:result,notes:inspForm.notes,photos_count:photos.length,sticker_number:stickerNum||null,sticker_signed_by:inspForm.inspectedBy,sticker_date:stickerNum?inspForm.inspectionDate:null})});
+      // Save inspection record
+      await db("qc_inspections",{method:"POST",body:JSON.stringify({
+        id,equipment_type:eqForm.equipmentType,manufacturer:eqForm.manufacturer,
+        model_number:eqForm.modelNumber,serial_number:eqForm.serialNumber,
+        voltage_rating:eqForm.voltageRating,amperage_rating:eqForm.amperageRating,
+        job_site:eqForm.jobSite,customer_name:eqForm.customerName,
+        source_location:eqForm.sourceLocation,
+        inspected_by:inspForm.inspectedBy,inspection_date:inspForm.inspectionDate,
+        inspection_type:inspForm.inspectionType,overall_result:result,
+        notes:inspForm.notes,photos_count:photos.length,
+        sticker_number:stickerNum||null,sticker_signed_by:inspForm.inspectedBy,
+        sticker_date:stickerNum?inspForm.inspectionDate:null,
+      })});
+      // Checklist items
       const checkRows=checks.filter(c=>c.result!=="not_checked").map(c=>({inspection_id:id,section:c.section,check_item:c.checkItem,result:c.result,notes:c.notes||null,sort_order:c.sort}));
       if(checkRows.length)await db("qc_checklist_items",{method:"POST",body:JSON.stringify(checkRows)});
-      const defRows=deficiencies.filter(d=>d.description).map(d=>({inventory_id:selItem.id,category:d.category||"General",description:d.description,severity:d.severity||"moderate",repair_needed:d.repairNeeded||false,repair_estimate:d.repairEstimate?parseFloat(d.repairEstimate):null}));
-      if(defRows.length)await db("inventory_deficiencies",{method:"POST",body:JSON.stringify(defRows)});
+      // Deficiencies
+      if(selItem){const defRows=deficiencies.filter(d=>d.description).map(d=>({inventory_id:selItem.id,category:d.category||"General",description:d.description,severity:d.severity||"moderate",repair_needed:d.repairNeeded||false,repair_estimate:d.repairEstimate?parseFloat(d.repairEstimate):null}));
+        if(defRows.length)await db("inventory_deficiencies",{method:"POST",body:JSON.stringify(defRows)});}
+      // Photos
       if(photos.length){const pr=photos.map(p=>({reference_id:id,reference_type:"qc_inspection",photo_url:p,taken_by:inspForm.inspectedBy}));await db("item_photos",{method:"POST",body:JSON.stringify(pr)});}
-      await db(`inventory_items?id=eq.${selItem.id}`,{method:"PATCH",body:JSON.stringify({status:statusMap[result]||"qc_pass",qc_inspection_id:id,qc_result:result,qc_date:inspForm.inspectionDate,qc_by:inspForm.inspectedBy,qc_sticker:stickerNum||null})});
-      setInv(p=>p.map(i=>i.id===selItem.id?{...i,status:statusMap[result],qc_result:result}:i));
-      setMsg({t:"success",m:`QC ${result.toUpperCase()} saved`});setView("inventory");loadInventory();
+      // Update inventory item if linked
+      if(selItem){
+        const patch={status:statusMap[result]||"qc_pass",qc_inspection_id:id,qc_result:result,qc_date:inspForm.inspectionDate,qc_by:inspForm.inspectedBy,qc_sticker:stickerNum||null};
+        if(orderNum)patch.order_number=orderNum;
+        await db(`inventory_items?id=eq.${selItem.id}`,{method:"PATCH",body:JSON.stringify(patch)});
+        setInv(p=>p.map(i=>i.id===selItem.id?{...i,...patch}:i));
+      }
+      setMsg({t:"success",m:`QC ${result.toUpperCase()} saved - ${id}`});setView("inventory");loadInventory();
     }catch(e){setMsg({t:"error",m:"Save failed: "+e.message});}
     setSaving(false);
   };
@@ -136,21 +184,47 @@ export default function QCApp() {
   const secChecks=(s)=>checks.filter(c=>c.section===s);
   const secProg=(s)=>{const it=secChecks(s);return`${it.filter(c=>c.result!=="not_checked").length}/${it.length}`;};
   const secColor=(s)=>{const it=secChecks(s);if(it.some(c=>c.result==="fail"))return"#dc2626";if(it.some(c=>c.result==="flag"))return"#f59e0b";if(it.every(c=>c.result==="pass"||c.result==="na"))return"#16a34a";return"#475569";};
-
   const filtInv=inv.filter(item=>{const q=invSearch.toLowerCase();const ms=!q||[item.serial_number,item.model_number,item.manufacturer,item.equipment_type,item.catalog_number,item.barcode_sku,item.id].some(f=>f&&String(f).toLowerCase().includes(q));const mst=!invFilterStatus||item.status===invFilterStatus;return ms&&mst;});
 
   return(
     <div style={{maxWidth:480,margin:"0 auto",padding:16,fontFamily:"-apple-system,system-ui,sans-serif",background:"#f1f5f9",minHeight:"100vh"}}>
+      {/* Header */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,padding:"12px 0",borderBottom:"3px solid #0f172a"}}>
         <div><div style={{fontSize:20,fontWeight:800}}>WES QC</div><div style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>QUALITY CONTROL</div></div>
         <div style={{display:"flex",gap:4}}>
-          {[{k:"inventory",l:"\uD83D\uDCE6 Items"},{k:"history",l:"\uD83D\uDCCB History"}].map(t=><button key={t.k} onClick={()=>{setView(t.k);if(t.k==="history")loadHistory();if(t.k==="inventory")loadInventory();}} style={{padding:"8px 12px",borderRadius:8,border:"none",background:view===t.k?"#0f172a":"#e2e8f0",color:view===t.k?"#fff":"#64748b",fontWeight:700,fontSize:11,cursor:"pointer"}}>{t.l}</button>)}
+          {[{k:"inventory",l:"\uD83D\uDCE6"},{k:"form",l:"+"},{k:"history",l:"\uD83D\uDCCB"}].map(t=><button key={t.k} onClick={()=>{setView(t.k);if(t.k==="history")loadHistory();if(t.k==="inventory")loadInventory();}} style={{padding:"8px 14px",borderRadius:8,border:"none",background:view===t.k?"#0f172a":"#e2e8f0",color:view===t.k?"#fff":"#64748b",fontWeight:700,fontSize:12,cursor:"pointer"}}>{t.l}</button>)}
         </div>
       </div>
 
       {msg&&<div style={{padding:"12px",background:msg.t==="error"?"#fef2f2":"#ecfdf5",border:`1px solid ${msg.t==="error"?"#fecaca":"#a7f3d0"}`,borderRadius:10,color:msg.t==="error"?"#dc2626":"#065f46",fontSize:13,marginBottom:12,display:"flex",justifyContent:"space-between"}}><span>{msg.m}</span><button onClick={()=>setMsg(null)} style={{background:"none",border:"none",fontWeight:700,cursor:"pointer",color:"inherit"}}>&times;</button></div>}
 
-      {/* ════ INVENTORY ════ */}
+      {/* ════ MANUAL ENTRY FORM ════ */}
+      {view==="form"&&<div>
+        <div style={{fontSize:14,fontWeight:800,marginBottom:12}}>New QC Inspection (Manual Entry)</div>
+        <div style={card}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Equipment Type *</label><select style={inpSm} value={eqForm.equipmentType} onChange={e=>uf("equipmentType",e.target.value)}><option value="">Select</option>{EQ.map(t=><option key={t}>{t}</option>)}</select></div>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Manufacturer</label><select style={inpSm} value={eqForm.manufacturer} onChange={e=>uf("manufacturer",e.target.value)}><option value="">Select</option>{MFR.map(m=><option key={m}>{m}</option>)}</select></div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>S/N</label><input style={inpSm} value={eqForm.serialNumber} onChange={e=>uf("serialNumber",e.target.value)}/></div>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Model</label><input style={inpSm} value={eqForm.modelNumber} onChange={e=>uf("modelNumber",e.target.value)}/></div>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Cat #</label><input style={inpSm} value={eqForm.catalogNumber} onChange={e=>uf("catalogNumber",e.target.value)}/></div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Amps</label><input style={inpSm} value={eqForm.amperageRating} onChange={e=>uf("amperageRating",e.target.value)}/></div>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Volts</label><input style={inpSm} value={eqForm.voltageRating} onChange={e=>uf("voltageRating",e.target.value)}/></div>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>KVA</label><input style={inpSm} value={eqForm.kvaRating} onChange={e=>uf("kvaRating",e.target.value)}/></div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Job Site</label><input style={inpSm} value={eqForm.jobSite} onChange={e=>uf("jobSite",e.target.value)} placeholder="Origin"/></div>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Customer</label><input style={inpSm} value={eqForm.customerName} onChange={e=>uf("customerName",e.target.value)}/></div>
+          </div>
+          <button onClick={startFromForm} style={{width:"100%",padding:"14px",borderRadius:10,border:"none",background:"#0f172a",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer"}}>Start Inspection</button>
+        </div>
+      </div>}
+
+      {/* ════ INVENTORY BROWSE ════ */}
       {view==="inventory"&&<div>
         <input style={{...inp,marginBottom:8}} value={invSearch} onChange={e=>setInvSearch(e.target.value)} placeholder="Search S/N, model, SKU..."/>
         <div style={{display:"flex",gap:4,marginBottom:10,overflowX:"auto",paddingBottom:4}}>
@@ -160,7 +234,7 @@ export default function QCApp() {
         </div>
         <div style={{fontSize:11,color:"#64748b",marginBottom:8}}>{filtInv.length} items</div>
         {invLoading&&<div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>Loading...</div>}
-        {!invLoading&&filtInv.length===0&&<div style={{textAlign:"center",padding:40}}><div style={{fontSize:40,marginBottom:8}}>📦</div><div style={{fontSize:14,fontWeight:700,color:"#475569"}}>No items</div></div>}
+        {!invLoading&&filtInv.length===0&&<div style={{textAlign:"center",padding:40}}><div style={{fontSize:40,marginBottom:8}}>📦</div><div style={{fontSize:14,fontWeight:700,color:"#475569"}}>No items</div><div style={{fontSize:12,color:"#94a3b8",marginTop:4}}>Tap + for manual entry</div></div>}
         {filtInv.map(item=>{const stc=sc[item.status]||"#6b7280";return(
           <div key={item.id} style={{...card,borderLeft:`4px solid ${stc}`,padding:14}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -170,19 +244,19 @@ export default function QCApp() {
                   {item.manufacturer&&<span style={{fontSize:11,color:"#64748b"}}>{item.manufacturer}</span>}
                   <span style={{padding:"2px 8px",borderRadius:6,background:stc+"18",color:stc,fontSize:9,fontWeight:800}}>{sl[item.status]||item.status}</span>
                   {item.qc_sticker&&<span style={{padding:"2px 6px",borderRadius:6,background:"#16a34a18",color:"#16a34a",fontSize:9,fontWeight:700}}>QC: {item.qc_sticker}</span>}
+                  {item.order_number&&<span style={{padding:"2px 6px",borderRadius:6,background:"#0369a118",color:"#0369a1",fontSize:9,fontWeight:700}}>Order: {item.order_number}</span>}
                 </div>
                 <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{item.serial_number?`S/N: ${item.serial_number}`:""}{item.amperage_rating?` ${item.amperage_rating}A`:""}{item.kva_rating?` ${item.kva_rating}KVA`:""}{item.voltage_rating?` ${item.voltage_rating}V`:""}</div>
                 {(item.putaway_location||item.barcode_sku)&&<div style={{display:"flex",gap:4,marginTop:3}}>{item.putaway_location&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#8b5cf618",color:"#8b5cf6",fontWeight:600}}>📍 {item.putaway_location}</span>}{item.barcode_sku&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#f59e0b18",color:"#f59e0b",fontWeight:600}}>SKU: {item.barcode_sku}</span>}</div>}
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                {(item.status==="received"||item.status==="in_qc")&&<button onClick={()=>startInspection(item)} style={{padding:"8px 14px",borderRadius:8,border:"none",background:"#0f172a",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer"}}>Start QC</button>}
-                {item.status==="qc_pass"&&<button onClick={()=>updateInvStatus(item.id,"ready")} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #16a34a",background:"#fff",color:"#16a34a",fontWeight:700,fontSize:10,cursor:"pointer"}}>\u2192 Ready</button>}
-                {item.status==="ready"&&<button onClick={()=>updateInvStatus(item.id,"staged_for_ship")} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #0891b2",background:"#fff",color:"#0891b2",fontWeight:700,fontSize:10,cursor:"pointer"}}>\u2192 Stage</button>}
-                {item.status==="staged_for_ship"&&<button onClick={()=>updateInvStatus(item.id,"shipped")} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #475569",background:"#fff",color:"#475569",fontWeight:700,fontSize:10,cursor:"pointer"}}>\u2192 Ship</button>}
-                {item.status==="qc_fail"&&<button onClick={()=>updateInvStatus(item.id,"refurb")} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #8b5cf6",background:"#fff",color:"#8b5cf6",fontWeight:700,fontSize:10,cursor:"pointer"}}>\u2192 Refurb</button>}
+                {(item.status==="received"||item.status==="in_qc")&&<button onClick={()=>startFromInventory(item)} style={{padding:"8px 14px",borderRadius:8,border:"none",background:"#0f172a",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer"}}>Start QC</button>}
+                {item.status==="qc_pass"&&<button onClick={()=>updateInvStatus(item.id,"ready")} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #16a34a",background:"#fff",color:"#16a34a",fontWeight:700,fontSize:10,cursor:"pointer"}}>{"\u2192"} Ready</button>}
+                {item.status==="ready"&&<button onClick={()=>updateInvStatus(item.id,"staged_for_ship")} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #0891b2",background:"#fff",color:"#0891b2",fontWeight:700,fontSize:10,cursor:"pointer"}}>{"\u2192"} Stage</button>}
+                {item.status==="staged_for_ship"&&<button onClick={()=>updateInvStatus(item.id,"shipped")} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #475569",background:"#fff",color:"#475569",fontWeight:700,fontSize:10,cursor:"pointer"}}>{"\u2192"} Ship</button>}
+                {item.status==="qc_fail"&&<button onClick={()=>updateInvStatus(item.id,"refurb")} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #8b5cf6",background:"#fff",color:"#8b5cf6",fontWeight:700,fontSize:10,cursor:"pointer"}}>{"\u2192"} Refurb</button>}
               </div>
             </div>
-            {/* Quick status row */}
             {!["received","in_qc"].includes(item.status)&&<div style={{display:"flex",gap:3,marginTop:6,flexWrap:"wrap"}}>
               {STAT.filter(s=>s.v!==item.status&&["received","ready","staged_for_ship","refurb","listed","scrapped"].includes(s.v)).map(s=>
                 <button key={s.v} onClick={()=>updateInvStatus(item.id,s.v)} style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${s.c}22`,background:"#fff",color:s.c,fontWeight:600,fontSize:9,cursor:"pointer"}}>{s.l}</button>
@@ -193,17 +267,33 @@ export default function QCApp() {
       </div>}
 
       {/* ════ INSPECTION ════ */}
-      {view==="inspect"&&selItem&&<div>
-        <div style={{...card,background:"#0f172a",color:"#fff"}}><div style={{fontSize:16,fontWeight:800}}>{selItem.equipment_type}</div><div style={{fontSize:12,color:"#94a3b8"}}>{selItem.manufacturer||""} {selItem.serial_number?`| S/N: ${selItem.serial_number}`:""}</div><div style={{fontSize:11,color:"#64748b",marginTop:4}}>{selItem.amperage_rating?`${selItem.amperage_rating}A `:""}{selItem.kva_rating?`${selItem.kva_rating}KVA `:""}{selItem.voltage_rating?`${selItem.voltage_rating}V `:""}{selItem.phase?`${selItem.phase}PH`:""}</div></div>
+      {view==="inspect"&&<div>
+        {/* Equipment summary */}
+        <div style={{...card,background:"#0f172a",color:"#fff"}}>
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <div>
+              <div style={{fontSize:16,fontWeight:800}}>{eqForm.equipmentType}</div>
+              <div style={{fontSize:12,color:"#94a3b8"}}>{eqForm.manufacturer||""} {eqForm.serialNumber?`| S/N: ${eqForm.serialNumber}`:""}</div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:4}}>{eqForm.amperageRating?`${eqForm.amperageRating}A `:""}{eqForm.kvaRating?`${eqForm.kvaRating}KVA `:""}{eqForm.voltageRating?`${eqForm.voltageRating}V `:""}{eqForm.catalogNumber?`Cat: ${eqForm.catalogNumber}`:""}</div>
+            </div>
+            {selItem&&<div style={{fontSize:9,color:"#64748b",textAlign:"right"}}>INV: {selItem.id}<br/>{selItem.putaway_location||""}</div>}
+          </div>
+        </div>
 
+        {/* Inspector info */}
         <Section title="Inspector Info" defaultOpen={true} color="#0f172a">
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Inspector</label><input style={inpSm} value={inspForm.inspectedBy} onChange={e=>setInspForm(p=>({...p,inspectedBy:e.target.value}))} placeholder="Name"/></div>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Inspector *</label><input style={inpSm} value={inspForm.inspectedBy} onChange={e=>setInspForm(p=>({...p,inspectedBy:e.target.value}))} placeholder="Name"/></div>
             <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Date</label><input style={inpSm} type="date" value={inspForm.inspectionDate} onChange={e=>setInspForm(p=>({...p,inspectionDate:e.target.value}))}/></div>
           </div>
-          <div style={{display:"flex",gap:4}}>{IT.map(t=><button key={t.v} onClick={()=>setInspForm(p=>({...p,inspectionType:t.v}))} style={{flex:1,padding:"8px 0",borderRadius:8,border:`2px solid ${inspForm.inspectionType===t.v?"#0f172a":"#e2e8f0"}`,background:inspForm.inspectionType===t.v?"#0f172a":"#fff",color:inspForm.inspectionType===t.v?"#fff":"#94a3b8",fontWeight:700,fontSize:11,cursor:"pointer"}}>{t.l}</button>)}</div>
+          <div style={{display:"flex",gap:4,marginBottom:8}}>{IT.map(t=><button key={t.v} onClick={()=>setInspForm(p=>({...p,inspectionType:t.v}))} style={{flex:1,padding:"8px 0",borderRadius:8,border:`2px solid ${inspForm.inspectionType===t.v?"#0f172a":"#e2e8f0"}`,background:inspForm.inspectionType===t.v?"#0f172a":"#fff",color:inspForm.inspectionType===t.v?"#fff":"#94a3b8",fontWeight:700,fontSize:11,cursor:"pointer"}}>{t.l}</button>)}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Order #</label><input style={inpSm} value={orderNum} onChange={e=>setOrderNum(e.target.value)} placeholder="WES-ORD-001 or PO#"/></div>
+            <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>QC Sticker #</label><input style={inpSm} value={stickerNum} onChange={e=>setStickerNum(e.target.value)} placeholder="WES-QC-001"/></div>
+          </div>
         </Section>
 
+        {/* Checklist sections */}
         {CL.map(sec=>{const si=secChecks(sec.s);const col=secColor(sec.s);return(
           <Section key={sec.s} title={sec.s} badge={secProg(sec.s)} color={col} count={si.filter(c=>c.result==="fail").length} countColor="#dc2626">
             {si.map((c,ci)=>{const gi=checks.findIndex(ch=>ch.section===c.section&&ch.checkItem===c.checkItem);return(
@@ -214,51 +304,57 @@ export default function QCApp() {
               </div>);})}
           </Section>);})}
 
+        {/* Megger */}
         <Section title="Megger / Insulation Resistance" badge={Object.values(megger).filter(v=>v&&v!=="1000").length>0?"recorded":""} color="#7c3aed">
           <div style={{marginBottom:6}}><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>Test Voltage</label><div style={{display:"flex",gap:4}}>{["500","1000","2500","5000"].map(v=><button key={v} onClick={()=>setMegger(p=>({...p,testV:v}))} style={{flex:1,padding:"8px 0",borderRadius:6,border:`2px solid ${megger.testV===v?"#7c3aed":"#e5e7eb"}`,background:megger.testV===v?"#7c3aed15":"#fff",color:megger.testV===v?"#7c3aed":"#94a3b8",fontWeight:700,fontSize:11,cursor:"pointer"}}>{v}V</button>)}</div></div>
-          <div style={{fontSize:10,fontWeight:700,color:"#6b7280",marginTop:8,marginBottom:4}}>Phase-to-Phase (M\u03A9)</div>
+          <div style={{fontSize:10,fontWeight:700,color:"#6b7280",marginTop:8,marginBottom:4}}>Phase-to-Phase (M{"\u03A9"})</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:8}}>
-            {[["A-B","aToB"],["B-C","bToC"],["C-A","cToA"]].map(([l,k])=><div key={k}><label style={{fontSize:9,color:"#94a3b8"}}>{l}</label><input style={inpSm} value={megger[k]} onChange={e=>setMegger(p=>({...p,[k]:e.target.value}))} placeholder="M\u03A9"/></div>)}
+            {[["A-B","aToB"],["B-C","bToC"],["C-A","cToA"]].map(([l,k])=><div key={k}><label style={{fontSize:9,color:"#94a3b8"}}>{l}</label><input style={inpSm} value={megger[k]} onChange={e=>setMegger(p=>({...p,[k]:e.target.value}))} placeholder={"M\u03A9"}/></div>)}
           </div>
-          <div style={{fontSize:10,fontWeight:700,color:"#6b7280",marginBottom:4}}>Phase-to-Ground (M\u03A9)</div>
+          <div style={{fontSize:10,fontWeight:700,color:"#6b7280",marginBottom:4}}>Phase-to-Ground (M{"\u03A9"})</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
-            {[["A-G","aToG"],["B-G","bToG"],["C-G","cToG"]].map(([l,k])=><div key={k}><label style={{fontSize:9,color:"#94a3b8"}}>{l}</label><input style={inpSm} value={megger[k]} onChange={e=>setMegger(p=>({...p,[k]:e.target.value}))} placeholder="M\u03A9"/></div>)}
+            {[["A-G","aToG"],["B-G","bToG"],["C-G","cToG"]].map(([l,k])=><div key={k}><label style={{fontSize:9,color:"#94a3b8"}}>{l}</label><input style={inpSm} value={megger[k]} onChange={e=>setMegger(p=>({...p,[k]:e.target.value}))} placeholder={"M\u03A9"}/></div>)}
           </div>
         </Section>
 
+        {/* Torque */}
         <Section title="Torque Verification" badge={torque.length>0?`${torque.filter(t=>t.actual).length}/${torque.length}`:""} color="#0369a1">
           {torque.length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:8}}>No torque specs for this equipment.</div>}
           {torque.map((t,ti)=><div key={ti} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:6,marginBottom:6,alignItems:"end"}}><div><div style={{fontSize:10,fontWeight:600,color:"#475569"}}>{t.loc||"Custom"}</div><div style={{fontSize:9,color:"#94a3b8"}}>{t.boltSize?`${t.boltSize} `:""}{t.spec}{t.specHigh?`-${t.specHigh}`:""} ft-lbs</div></div><div><input style={{...inpSm,padding:"8px"}} value={t.actual} onChange={e=>{const v=[...torque];v[ti].actual=e.target.value;v[ti].pass=parseFloat(e.target.value)>=parseFloat(t.spec)&&(!t.specHigh||parseFloat(e.target.value)<=parseFloat(t.specHigh));setTorque(v);}} placeholder="Actual"/></div><div style={{textAlign:"center"}}>{t.actual&&<span style={{fontSize:18,color:t.pass?"#16a34a":"#dc2626"}}>{t.pass?"\u2713":"\u2717"}</span>}</div></div>)}
           <button onClick={()=>setTorque(p=>[...p,{loc:"",boltSize:"",spec:"",specHigh:"",actual:"",pass:null}])} style={{padding:"6px 12px",borderRadius:6,border:"1px dashed #94a3b8",background:"#fff",color:"#64748b",fontWeight:600,fontSize:10,cursor:"pointer",width:"100%"}}>+ Add Point</button>
         </Section>
 
+        {/* Deficiencies */}
         <Section title="Deficiencies" badge={deficiencies.length||""} color="#dc2626">
           {deficiencies.map((d,di)=><div key={di} style={{padding:10,borderRadius:8,border:"1px solid #fecaca",marginBottom:6,background:"#fef2f2"}}><div style={{display:"flex",gap:6,marginBottom:6}}><select style={{...inpSm,flex:1,padding:"8px"}} value={d.category} onChange={e=>{const v=[...deficiencies];v[di].category=e.target.value;setDeficiencies(v);}}><option value="">Category</option>{["Cosmetic","Structural","Electrical","Mechanical","Safety","Missing Part","Other"].map(c=><option key={c}>{c}</option>)}</select><select style={{...inpSm,flex:1,padding:"8px"}} value={d.severity} onChange={e=>{const v=[...deficiencies];v[di].severity=e.target.value;setDeficiencies(v);}}>{["minor","moderate","major","critical"].map(s=><option key={s}>{s}</option>)}</select><button onClick={()=>setDeficiencies(p=>p.filter((_,i)=>i!==di))} style={{background:"none",border:"none",color:"#ef4444",fontSize:18,cursor:"pointer"}}>&times;</button></div><input style={{...inpSm,marginBottom:4}} value={d.description} onChange={e=>{const v=[...deficiencies];v[di].description=e.target.value;setDeficiencies(v);}} placeholder="Describe..."/><div style={{display:"flex",gap:8,alignItems:"center"}}><label style={{fontSize:10,display:"flex",alignItems:"center",gap:4}}><input type="checkbox" checked={d.repairNeeded} onChange={e=>{const v=[...deficiencies];v[di].repairNeeded=e.target.checked;setDeficiencies(v);}}/> Repair</label>{d.repairNeeded&&<input style={{...inpSm,width:80,padding:"6px"}} type="number" value={d.repairEstimate||""} onChange={e=>{const v=[...deficiencies];v[di].repairEstimate=e.target.value;setDeficiencies(v);}} placeholder="$"/>}</div></div>)}
           <button onClick={()=>setDeficiencies(p=>[...p,{category:"",description:"",severity:"moderate",repairNeeded:false,repairEstimate:""}])} style={{padding:"8px",borderRadius:6,border:"1px dashed #dc2626",background:"#fff",color:"#dc2626",fontWeight:600,fontSize:11,cursor:"pointer",width:"100%"}}>+ Deficiency</button>
         </Section>
 
+        {/* Photos */}
         <Section title="Photos" badge={photos.length||""} color="#475569">
           {photos.length>0&&<div style={{display:"flex",gap:6,marginBottom:8,overflowX:"auto",paddingBottom:4}}>{photos.map((p,pi)=><img key={pi} src={p} alt="" style={{width:70,height:70,borderRadius:8,objectFit:"cover",border:"2px solid #e5e7eb",flexShrink:0}}/>)}</div>}
           <label style={{display:"block",padding:"12px",borderRadius:8,border:"1px dashed #94a3b8",background:"#fff",color:"#64748b",fontWeight:600,fontSize:12,textAlign:"center",cursor:"pointer"}}>📸 Add Photo<input type="file" accept="image/*" capture="environment" onChange={e=>addPhoto(e.target.files?.[0])} style={{display:"none"}}/></label>
         </Section>
 
-        <Section title="Notes & Sticker" defaultOpen={true} color="#475569">
-          <textarea style={{...inpSm,minHeight:60,resize:"vertical",marginBottom:8}} value={inspForm.notes} onChange={e=>setInspForm(p=>({...p,notes:e.target.value}))} placeholder="Notes..."/>
-          <div><label style={{fontSize:10,fontWeight:600,color:"#6b7280"}}>QC Sticker #</label><input style={inpSm} value={stickerNum} onChange={e=>setStickerNum(e.target.value)} placeholder="WES-QC-0001"/></div>
+        {/* Notes */}
+        <Section title="Notes" defaultOpen={false} color="#475569">
+          <textarea style={{...inpSm,minHeight:60,resize:"vertical"}} value={inspForm.notes} onChange={e=>setInspForm(p=>({...p,notes:e.target.value}))} placeholder="General notes..."/>
         </Section>
 
+        {/* Summary + Result */}
         <div style={{...card,background:"#f8fafc",border:"2px solid #e2e8f0"}}>
           <div style={{fontSize:13,fontWeight:800,marginBottom:8}}>Summary</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,marginBottom:12}}>
             {[{l:"Pass",c:"#16a34a",n:checks.filter(c=>c.result==="pass").length},{l:"Fail",c:"#dc2626",n:checks.filter(c=>c.result==="fail").length},{l:"Flag",c:"#f59e0b",n:checks.filter(c=>c.result==="flag").length},{l:"N/A",c:"#94a3b8",n:checks.filter(c=>c.result==="na").length}].map(r=><div key={r.l} style={{textAlign:"center"}}><div style={{fontSize:20,fontWeight:800,color:r.c}}>{r.n}</div><div style={{fontSize:10,color:"#64748b"}}>{r.l}</div></div>)}
           </div>
           {deficiencies.length>0&&<div style={{fontSize:11,color:"#dc2626",marginBottom:8,fontWeight:600}}>{deficiencies.length} deficiencies</div>}
+          {(stickerNum||orderNum)&&<div style={{fontSize:11,color:"#475569",marginBottom:8}}>{stickerNum?`Sticker: ${stickerNum}`:""}{stickerNum&&orderNum?" | ":""}{orderNum?`Order: ${orderNum}`:""}</div>}
           <div style={{display:"flex",gap:6}}>
             <button disabled={saving} onClick={()=>saveInspection("pass")} style={{flex:1,padding:"14px 0",borderRadius:10,border:"none",background:"#16a34a",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",opacity:saving?0.6:1}}>{"\u2713"} PASS</button>
             <button disabled={saving} onClick={()=>saveInspection("conditional")} style={{flex:1,padding:"14px 0",borderRadius:10,border:"none",background:"#f59e0b",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",opacity:saving?0.6:1}}>{"\u26a0"} COND</button>
             <button disabled={saving} onClick={()=>saveInspection("fail")} style={{flex:1,padding:"14px 0",borderRadius:10,border:"none",background:"#dc2626",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",opacity:saving?0.6:1}}>{"\u2717"} FAIL</button>
           </div>
-          <button onClick={()=>{setView("inventory");updateInvStatus(selItem.id,"received");}} style={{width:"100%",marginTop:8,padding:"10px 0",borderRadius:8,border:"1px solid #d1d5db",background:"#fff",color:"#64748b",fontWeight:600,fontSize:12,cursor:"pointer"}}>Cancel</button>
+          <button onClick={()=>{setView("inventory");if(selItem)updateInvStatus(selItem.id,"received");}} style={{width:"100%",marginTop:8,padding:"10px 0",borderRadius:8,border:"1px solid #d1d5db",background:"#fff",color:"#64748b",fontWeight:600,fontSize:12,cursor:"pointer"}}>Cancel</button>
         </div>
       </div>}
 
@@ -267,11 +363,11 @@ export default function QCApp() {
         <div style={{fontSize:14,fontWeight:800,marginBottom:12}}>Inspection History</div>
         {histLoading&&<div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>Loading...</div>}
         {!histLoading&&history.length===0&&<div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>No inspections yet.</div>}
-        {history.map(h=>{const rc2=h.overall_result==="pass"?"#16a34a":h.overall_result==="fail"?"#dc2626":"#f59e0b";return(
-          <div key={h.id} style={{...card,borderLeft:`4px solid ${rc2}`,padding:14}}>
+        {history.map(h=>{const rc2=h.overall_result==="pass"?"#16a34a":h.overall_result==="fail"?"#dc2626":"#f59e0b";const isExp=histExpId===h.id;return(
+          <div key={h.id} style={{...card,borderLeft:`4px solid ${rc2}`,padding:14,cursor:"pointer"}} onClick={()=>setHistExpId(isExp?null:h.id)}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:13,fontWeight:800}}>{h.equipment_type} {h.manufacturer||""}</div><div style={{fontSize:11,color:"#64748b"}}>{h.serial_number?`S/N: ${h.serial_number}`:""} {h.amperage_rating?`${h.amperage_rating}A`:""}</div></div><span style={{padding:"4px 12px",borderRadius:8,background:rc2+"18",color:rc2,fontWeight:800,fontSize:12}}>{(h.overall_result||"").toUpperCase()}</span></div>
             <div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>{h.inspection_date} | {h.inspected_by} | {h.inspection_type}{h.sticker_number?` | Sticker: ${h.sticker_number}`:""}</div>
-            {h.notes&&<div style={{fontSize:11,color:"#475569",marginTop:4,fontStyle:"italic"}}>{h.notes}</div>}
+            {h.notes&&isExp&&<div style={{fontSize:11,color:"#475569",marginTop:6,padding:8,background:"#f8fafc",borderRadius:6}}>{h.notes}</div>}
           </div>);})}
         <div style={{textAlign:"center",padding:12}}><button onClick={loadHistory} style={{padding:"10px 24px",borderRadius:8,border:"1px solid #d1d5db",background:"#fff",color:"#475569",fontWeight:600,fontSize:12,cursor:"pointer"}}>Refresh</button></div>
       </div>}
