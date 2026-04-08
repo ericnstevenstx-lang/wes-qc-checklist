@@ -1,369 +1,679 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 /* ── Supabase ──────────────────────────────────────────── */
-const SB = "https://ulyycjtrshpsjpvbztkr.supabase.co";
-const SK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVseXljanRyc2hwc2pwdmJ6dGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMzg1NzAsImV4cCI6MjA5MDcxNDU3MH0.UYwCdYrdy20xl_hCkO8t4CAB16vBHj-oMdflDv1XlVE";
-const H = { apikey:SK, Authorization:`Bearer ${SK}`, "Content-Type":"application/json", Prefer:"return=representation" };
-let local = false;
-async function db(p, o={}) { const r = await fetch(`${SB}/rest/v1/${p}`, { ...o, headers:{...H,...(o.headers||{})} }); if (!r.ok) throw new Error(`${r.status}`); const t = await r.text(); return t ? JSON.parse(t) : null; }
-async function sG(k) { try { if (typeof window!=="undefined"&&window.storage){const r=await window.storage.get(k);return r?JSON.parse(r.value):null;}} catch{} return null; }
-async function sS(k,v) { try { if (typeof window!=="undefined"&&window.storage) await window.storage.set(k,JSON.stringify(v)); } catch{} }
+const SB_URL = "https://ulyycjtrshpsjpvbztkr.supabase.co";
+const SB_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVseXljanRyc2hwc2pwdmJ6dGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMzg1NzAsImV4cCI6MjA5MDcxNDU3MH0.UYwCdYrdy20xl_hCkO8t4CAB16vBHj-oMdflDv1XlVE";
+const hdrs = {
+  apikey: SB_KEY,
+  Authorization: `Bearer ${SB_KEY}`,
+  "Content-Type": "application/json",
+  Prefer: "return=representation",
+};
+async function sb(path, opts = {}) {
+  const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
+    ...opts,
+    headers: { ...hdrs, ...(opts.headers || {}) },
+  });
+  if (!r.ok) throw new Error(`${r.status}`);
+  const t = await r.text();
+  return t ? JSON.parse(t) : null;
+}
 
 /* ── Constants ─────────────────────────────────────────── */
-const EQ=["Switchgear","Panelboard","Transformer","Circuit Breaker","Motor Control Center (MCC)","Bus Duct","Disconnect Switch","UPS System","PDU","RPP (Remote Power Panel)","ATS / Transfer Switch","Other"];
-const MFR=["Eaton / Cutler-Hammer","Siemens","Square D / Schneider","ABB","GE","Westinghouse","ITE","Federal Pacific","Liebert / Vertiv","APC / Schneider","Other"];
-const IT=[{v:"incoming",l:"Incoming"},{v:"pre_refurb",l:"Pre-Refurb"},{v:"post_refurb",l:"Post-Refurb"},{v:"outgoing",l:"Outgoing"}];
-const RO=[{v:"pass",l:"PASS",c:"#16a34a",i:"\u2713"},{v:"fail",l:"FAIL",c:"#dc2626",i:"\u2717"},{v:"na",l:"N/A",c:"#94a3b8",i:"\u2014"},{v:"flag",l:"FLAG",c:"#f59e0b",i:"\u26a0"}];
-const OR=[{v:"pending",c:"#6b7280"},{v:"pass",c:"#16a34a"},{v:"fail",c:"#dc2626"},{v:"conditional",c:"#f59e0b"}];
-const rc={}; OR.forEach(r=>rc[r.v]=r.c);
+const EQUIP_TYPES = [
+  "Switchgear","Panelboard","Transformer","Circuit Breaker",
+  "Motor Control Center (MCC)","Bus Duct","Disconnect Switch",
+  "UPS System","PDU","RPP (Remote Power Panel)",
+  "ATS / Transfer Switch","VFD / Drive","Motor Starter",
+  "Control Transformer","Trip Unit","Relay","CT / PT","Meter","Other",
+];
+const MFRS = [
+  "Eaton / Cutler-Hammer","Siemens","Square D / Schneider","ABB","GE",
+  "Westinghouse","ITE","Federal Pacific","Allen-Bradley / Rockwell",
+  "Mitsubishi","Yaskawa","Danfoss","Liebert / Vertiv","APC / Schneider",
+  "ABL Sursum","Other",
+];
+const STATUSES = [
+  { v: "received", l: "Received", c: "#6b7280" },
+  { v: "in_qc", l: "In QC", c: "#f59e0b" },
+  { v: "qc_pass", l: "QC Pass", c: "#16a34a" },
+  { v: "qc_fail", l: "QC Fail", c: "#dc2626" },
+  { v: "conditional", l: "Conditional", c: "#f59e0b" },
+  { v: "refurb", l: "In Refurb", c: "#8b5cf6" },
+  { v: "ready", l: "Ready", c: "#16a34a" },
+  { v: "listed", l: "Listed", c: "#0369a1" },
+  { v: "staged_for_ship", l: "Staged", c: "#0891b2" },
+  { v: "shipped", l: "Shipped", c: "#475569" },
+  { v: "sold", l: "Sold", c: "#065f46" },
+  { v: "scrapped", l: "Scrapped", c: "#dc2626" },
+];
+const SC = {}; STATUSES.forEach((s) => (SC[s.v] = s.c));
+const SL = {}; STATUSES.forEach((s) => (SL[s.v] = s.l));
 
-const CL=[
-  {s:"Visual / Physical",items:["Enclosure condition (dents, rust, corrosion)","Door latches, hinges, hardware functional","Gaskets and seals intact","Mounting hardware present and secure","No water damage or moisture","No overheating, arcing, or burn marks","Interior clean, free of debris","All covers and barriers in place","Nameplates and labels legible","Cable entry points sealed"]},
-  {s:"Bus Bars",items:["Bus bars good condition (no pitting, warping)","Bus bar insulation / coating intact","Phase ID correct (A/B/C)","Ground bus present and bonded","Neutral bus properly terminated","Bus bar hardware corrosion-free"]},
-  {s:"Lugs & Terminations",items:["Lug type and size correct","Lug crimps secure (no loose barrels)","No heat damage / discoloration on lugs","Anti-oxidant on aluminum connections","Wire gauge matched to lug rating","Set screw lugs to spec","Mechanical lugs no cracks","Landing pads clean, no oxidation"]},
-  {s:"Electrical Testing",items:["Megger test performed","Megger readings acceptable","Contact resistance (micro-ohm) tested","Hi-pot test (if applicable)","Continuity all circuits","Ground fault path verified","Voltage verified vs nameplate","Amperage verified vs nameplate"]},
-  {s:"Breakers / Switching",items:["Breakers operate freely","Trip unit functional","Arc chutes present, good condition","Breaker contacts good (no pitting)","Mounting / stabs secure","Correct frame size and trip rating","Phasing correct","Shunt trip OK (if equipped)","Aux contacts OK (if equipped)"]},
-  {s:"Mechanical",items:["Operating mechanism functional","Interlocks operational","Key interlocks verified","Draw-out mechanism OK","Spring charging OK","Racking mechanism smooth","Fan / ventilation OK","Handles, latching hardware tight"]},
-  {s:"Safety & Compliance",items:["Arc flash labels current","Warning labels in place","NFPA 70B compliance","UL / CSA listing verified","PPE requirements posted","LOTO provisions functional","Equipment grounding verified"]},
-  {s:"Final / Cosmetic",items:["Cleaned inside and out","Touch-up paint applied","WES inventory label applied","Serial number tag verified","Photos taken and filed","Shipping prep (if outgoing)"]},
+const RESULTS = [
+  { v: "pass", l: "PASS", c: "#16a34a", i: "✓" },
+  { v: "fail", l: "FAIL", c: "#dc2626", i: "✗" },
+  { v: "na", l: "N/A", c: "#94a3b8", i: "—" },
+  { v: "flag", l: "FLAG", c: "#f59e0b", i: "⚠" },
+];
+const INSP_TYPES = [
+  { v: "incoming", l: "Incoming" },
+  { v: "pre_refurb", l: "Pre-Refurb" },
+  { v: "post_refurb", l: "Post-Refurb" },
+  { v: "outgoing", l: "Outgoing" },
+];
+const SECTIONS = [
+  {
+    s: "Visual / Physical",
+    items: [
+      "Enclosure condition (dents, rust, corrosion)",
+      "Door latches, hinges, hardware functional",
+      "Gaskets and seals intact",
+      "Mounting hardware present and secure",
+      "No water damage or moisture",
+      "No overheating, arcing, or burn marks",
+      "Interior clean, free of debris",
+      "All covers and barriers in place",
+      "Nameplates and labels legible",
+      "Cable entry points sealed",
+    ],
+  },
+  {
+    s: "Bus Bars",
+    items: [
+      "Bus bars good condition (no pitting, warping)",
+      "Bus bar insulation / coating intact",
+      "Phase ID correct (A/B/C)",
+      "Ground bus present and bonded",
+      "Neutral bus properly terminated",
+      "Bus bar hardware corrosion-free",
+    ],
+  },
+  {
+    s: "Lugs & Terminations",
+    items: [
+      "Lug type and size correct",
+      "Lug crimps secure (no loose barrels)",
+      "No heat damage / discoloration on lugs",
+      "Anti-oxidant on aluminum connections",
+      "Wire gauge matched to lug rating",
+      "Set screw lugs to spec",
+      "Mechanical lugs no cracks",
+      "Landing pads clean, no oxidation",
+    ],
+  },
+  {
+    s: "Electrical Testing",
+    items: [
+      "Megger test performed",
+      "Megger readings acceptable",
+      "Contact resistance (micro-ohm) tested",
+      "Hi-pot test (if applicable)",
+      "Continuity all circuits",
+      "Ground fault path verified",
+      "Voltage verified vs nameplate",
+      "Amperage verified vs nameplate",
+    ],
+  },
+  {
+    s: "Breakers / Switching",
+    items: [
+      "Breakers operate freely",
+      "Trip unit functional",
+      "Arc chutes present, good condition",
+      "Breaker contacts good (no pitting)",
+      "Mounting / stabs secure",
+      "Correct frame size and trip rating",
+      "Phasing correct",
+      "Shunt trip OK (if equipped)",
+      "Aux contacts OK (if equipped)",
+    ],
+  },
+  {
+    s: "Mechanical",
+    items: [
+      "Operating mechanism functional",
+      "Interlocks operational",
+      "Key interlocks verified",
+      "Draw-out mechanism OK",
+      "Spring charging OK",
+      "Racking mechanism smooth",
+      "Fan / ventilation OK",
+      "Handles, latching hardware tight",
+    ],
+  },
+  {
+    s: "Safety & Compliance",
+    items: [
+      "Arc flash labels current",
+      "Warning labels in place",
+      "NFPA 70B compliance",
+      "UL / CSA listing verified",
+      "PPE requirements posted",
+      "LOTO provisions functional",
+      "Equipment grounding verified",
+    ],
+  },
+  {
+    s: "Final / Cosmetic",
+    items: [
+      "Cleaned inside and out",
+      "Touch-up paint applied",
+      "WES inventory label applied",
+      "Serial number tag verified",
+      "Photos taken and filed",
+      "Shipping prep (if outgoing)",
+    ],
+  },
 ];
 
-const today=()=>new Date().toISOString().slice(0,10);
+const today = () => new Date().toISOString().slice(0, 10);
 
-/* ── Styles (mobile-first, 16px inputs prevent iOS zoom) ── */
-const inp={width:"100%",padding:"12px 14px",border:"1.5px solid #d1d5db",borderRadius:10,fontSize:16,background:"#fff",color:"#111",boxSizing:"border-box",outline:"none",fontFamily:"inherit",WebkitAppearance:"none"};
-const inpE={...inp,borderColor:"#ef4444"};
-const inpSm={...inp,fontSize:14,padding:"10px 12px"};
-const lbl={display:"block",fontSize:13,fontWeight:700,color:"#475569",marginBottom:4};
-const card={background:"#fff",borderRadius:14,padding:16,marginBottom:12,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"};
-const err={fontSize:12,color:"#ef4444",marginTop:3};
+/* ── Styles ────────────────────────────────────────────── */
+const inputBase = {
+  width: "100%",
+  padding: "12px 14px",
+  border: "1.5px solid #d1d5db",
+  borderRadius: 10,
+  fontSize: 16,
+  background: "#fff",
+  color: "#111",
+  boxSizing: "border-box",
+  outline: "none",
+  fontFamily: "inherit",
+  WebkitAppearance: "none",
+};
+const inputSm = { ...inputBase, fontSize: 14, padding: "10px 12px" };
+const card = {
+  background: "#fff",
+  borderRadius: 14,
+  padding: 16,
+  marginBottom: 12,
+  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+};
 
-/* ── Component ─────────────────────────────────────────── */
-export default function QCChecklist() {
-  const [view,setView]=useState("form");
-  const [insp,setInsp]=useState([]);
-  const [ld,setLd]=useState(false);
-  const [sv,setSv]=useState(false);
-  const [scan,setScan]=useState(false);
-  const [scanImg,setScanImg]=useState(null);
-  const [msg,setMsg]=useState(null);
-  const [expId,setExpId]=useState(null);
-  const [filt,setFilt]=useState("all");
-  const [openSec,setOpenSec]=useState({});
-  const [showSticker,setShowSticker]=useState(null);
-  const fileRef=useRef(null);
+/* ── Collapsible ───────────────────────────────────────── */
+function Section({ title, children, badge, defaultOpen = false, color = "#475569", count, countColor }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          width: "100%", padding: "10px 12px", borderRadius: 8,
+          border: "1px solid #e5e7eb", background: open ? "#f8fafc" : "#fff",
+          cursor: "pointer", fontFamily: "inherit",
+        }}
+      >
+        <span style={{ fontSize: 12, fontWeight: 700, color }}>
+          {open ? "▾" : "▸"} {title}{badge ? ` (${badge})` : ""}
+        </span>
+        {count != null && count > 0 && (
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+            background: (countColor || color) + "18", color: countColor || color,
+          }}>{count}</span>
+        )}
+      </button>
+      {open && <div style={{ padding: "10px 0 0" }}>{children}</div>}
+    </div>
+  );
+}
 
-  const toggle=(s)=>setOpenSec(p=>({...p,[s]:!p[s]}));
+/* ── Photo helper ──────────────────────────────────────── */
+function compressImage(file, maxDim = 1200, quality = 0.7) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const scale = Math.min(maxDim / img.width, maxDim / img.height, 1);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
-  const [form,setForm]=useState({
-    equipmentType:"",manufacturer:"",modelNumber:"",serialNumber:"",
-    voltageRating:"",amperageRating:"",jobSite:"",customerName:"",
-    sourceLocation:"",inspectedBy:"",inspectionDate:today(),
-    inspectionType:"incoming",notes:"",
+/* ── Main App ──────────────────────────────────────────── */
+function QCApp() {
+  const [tab, setTab] = useState("inventory");
+  const [toast, setToast] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+
+  /* ── Inventory load ── */
+  const loadItems = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await sb("inventory_items?select=*&order=created_at.desc&limit=200");
+      if (data) setItems(data);
+    } catch (e) {}
+    setLoading(false);
+  }, []);
+  useEffect(() => { loadItems(); }, [loadItems]);
+
+  /* ── Orders ── */
+  const [orders, setOrders] = useState([]);
+  const loadOrders = useCallback(async () => {
+    try {
+      const data = await sb("orders?select=*&order=created_at.desc&limit=50");
+      if (data) setOrders(data);
+    } catch (e) {}
+  }, []);
+  useEffect(() => { loadOrders(); }, [loadOrders]);
+
+  /* ── Active item (from inventory) ── */
+  const [activeItem, setActiveItem] = useState(null);
+
+  /* ── Equipment form state ── */
+  const [equip, setEquip] = useState({
+    equipmentType: "", manufacturer: "", modelNumber: "", serialNumber: "",
+    voltageRating: "", amperageRating: "", kvaRating: "", catalogNumber: "",
+    jobSite: "", customerName: "", sourceLocation: "",
+  });
+  const setE = (k, v) => setEquip((p) => ({ ...p, [k]: v }));
+
+  /* ── Inspector / meta ── */
+  const [meta, setMeta] = useState({
+    inspectedBy: "", inspectionDate: today(), inspectionType: "incoming", notes: "",
+  });
+  const [checks, setChecks] = useState([]);
+  const [megger, setMegger] = useState({
+    aToB: "", bToC: "", cToA: "", aToG: "", bToG: "", cToG: "", testV: "1000",
+  });
+  const [torques, setTorques] = useState([]);
+  const [deficiencies, setDeficiencies] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [stickerNum, setStickerNum] = useState("");
+  const [orderNum, setOrderNum] = useState("");
+  const [invoiceNum, setInvoiceNum] = useState("");
+
+  /* ── History ── */
+  const [history, setHistory] = useState([]);
+  const [histLoading, setHistLoading] = useState(false);
+  const [expandedHist, setExpandedHist] = useState(null);
+  const loadHistory = useCallback(async () => {
+    setHistLoading(true);
+    try {
+      const data = await sb("qc_inspections?select=*&order=created_at.desc&limit=100");
+      if (data) setHistory(data);
+    } catch (e) {}
+    setHistLoading(false);
+  }, []);
+
+  /* ── Checklist init ── */
+  const initChecks = () =>
+    SECTIONS.flatMap((sec, si) =>
+      sec.items.map((item, ii) => ({
+        section: sec.s, checkItem: item, result: "not_checked", notes: "", sort: si * 100 + ii,
+      }))
+    );
+
+  /* ── Torque specs loader ── */
+  const loadTorqueSpecs = useCallback(async (mfr, eqType) => {
+    try {
+      const rows = await sb("torque_specs?select=*&order=connection_point");
+      if (rows) {
+        const filtered = rows.filter((r) => {
+          const mfrMatch = !r.manufacturer || r.manufacturer === mfr;
+          const typeMatch = !r.equipment_type || (eqType || "").toLowerCase().includes((r.equipment_type || "").toLowerCase());
+          return mfrMatch && typeMatch;
+        });
+        const best = {};
+        filtered.forEach((r) => {
+          const k = r.connection_point;
+          if (!best[k] || r.manufacturer) best[k] = r;
+        });
+        setTorques(
+          Object.values(best).map((r) => ({
+            loc: r.connection_point, boltSize: r.bolt_size || "",
+            spec: String(r.spec_ft_lbs), specHigh: r.spec_range_high ? String(r.spec_range_high) : "",
+            actual: "", pass: null,
+          }))
+        );
+      }
+    } catch (e) {}
+  }, []);
+
+  /* ── Start QC from inventory item ── */
+  const startQCFromItem = async (item) => {
+    setActiveItem(item);
+    setEquip({
+      equipmentType: item.equipment_type || "", manufacturer: item.manufacturer || "",
+      modelNumber: item.model_number || "", serialNumber: item.serial_number || "",
+      voltageRating: item.voltage_rating || "", amperageRating: item.amperage_rating || "",
+      kvaRating: item.kva_rating || "", catalogNumber: item.catalog_number || "",
+      jobSite: item.source_job_site || "", customerName: item.customer_origin || "",
+      sourceLocation: item.location || "",
+    });
+    resetInspection(item.manufacturer, item.equipment_type);
+    try {
+      await sb(`inventory_items?id=eq.${item.id}`, {
+        method: "PATCH", body: JSON.stringify({ status: "in_qc" }),
+      });
+      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: "in_qc" } : i)));
+    } catch (e) {}
+    setTab("inspect");
+  };
+
+  const resetInspection = (mfr, eqType) => {
+    setChecks(initChecks());
+    setMegger({ aToB: "", bToC: "", cToA: "", aToG: "", bToG: "", cToG: "", testV: "1000" });
+    setDeficiencies([]);
+    setPhotos([]);
+    setStickerNum("");
+    setOrderNum("");
+    setInvoiceNum("");
+    setMeta({ inspectedBy: "", inspectionDate: today(), inspectionType: "incoming", notes: "" });
+    loadTorqueSpecs(mfr, eqType);
+  };
+
+  /* ── Status change helper ── */
+  const changeStatus = async (id, status, extra = {}) => {
+    try {
+      await sb(`inventory_items?id=eq.${id}`, {
+        method: "PATCH", body: JSON.stringify({ status, ...extra }),
+      });
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status, ...extra } : i)));
+      setToast({ t: "success", m: `${SL[status] || status}` });
+    } catch (e) {
+      setToast({ t: "error", m: e.message });
+    }
+  };
+
+  /* ── Photo upload ── */
+  const handlePhoto = async (file) => {
+    if (!file) return;
+    const dataUrl = await compressImage(file);
+    let url = dataUrl;
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      const name = `qc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
+      const res = await fetch(`${SB_URL}/storage/v1/object/item-photos/${name}`, {
+        method: "POST",
+        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "image/jpeg" },
+        body: blob,
+      });
+      if (res.ok) url = `${SB_URL}/storage/v1/object/public/item-photos/${name}`;
+    } catch (e) {}
+    setPhotos((p) => [...p, url]);
+  };
+
+  /* ── Save inspection ── */
+  const saveInspection = async (result) => {
+    if (!meta.inspectedBy) {
+      setToast({ t: "error", m: "Inspector name required" });
+      return;
+    }
+    setSaving(true);
+    const inspId = `QC-${Date.now().toString(36).toUpperCase()}`;
+    try {
+      await sb("qc_inspections", {
+        method: "POST",
+        body: JSON.stringify({
+          id: inspId,
+          equipment_type: equip.equipmentType,
+          manufacturer: equip.manufacturer,
+          model_number: equip.modelNumber,
+          serial_number: equip.serialNumber,
+          voltage_rating: equip.voltageRating,
+          amperage_rating: equip.amperageRating,
+          job_site: equip.jobSite,
+          customer_name: equip.customerName,
+          source_location: equip.sourceLocation,
+          inspected_by: meta.inspectedBy,
+          inspection_date: meta.inspectionDate,
+          inspection_type: meta.inspectionType,
+          overall_result: result,
+          notes: meta.notes,
+          photos_count: photos.length,
+          sticker_number: stickerNum || null,
+          sticker_signed_by: meta.inspectedBy,
+          sticker_date: stickerNum ? meta.inspectionDate : null,
+          invoice_number: invoiceNum || null,
+          qb_sync_status: "pending",
+        }),
+      });
+
+      // Save checklist items
+      const checkRows = checks
+        .filter((c) => c.result !== "not_checked")
+        .map((c) => ({
+          inspection_id: inspId, section: c.section, check_item: c.checkItem,
+          result: c.result, notes: c.notes || null, sort_order: c.sort,
+        }));
+      if (checkRows.length) await sb("qc_checklist_items", { method: "POST", body: JSON.stringify(checkRows) });
+
+      // Save deficiencies
+      if (activeItem) {
+        const defRows = deficiencies
+          .filter((d) => d.description)
+          .map((d) => ({
+            inventory_id: activeItem.id, category: d.category || "General",
+            description: d.description, severity: d.severity || "moderate",
+            repair_needed: d.repairNeeded || false,
+            repair_estimate: d.repairEstimate ? parseFloat(d.repairEstimate) : null,
+          }));
+        if (defRows.length) await sb("inventory_deficiencies", { method: "POST", body: JSON.stringify(defRows) });
+      }
+
+      // Save photos
+      if (photos.length) {
+        const photoRows = photos.map((url) => ({
+          reference_id: inspId, reference_type: "qc_inspection",
+          photo_url: url, taken_by: meta.inspectedBy,
+        }));
+        await sb("item_photos", { method: "POST", body: JSON.stringify(photoRows) });
+      }
+
+      // Update inventory item
+      if (activeItem) {
+        const patch = {
+          status: { pass: "qc_pass", fail: "qc_fail", conditional: "conditional" }[result] || "qc_pass",
+          qc_inspection_id: inspId, qc_result: result,
+          qc_date: meta.inspectionDate, qc_by: meta.inspectedBy,
+          qc_sticker: stickerNum || null,
+        };
+        if (orderNum) patch.order_number = orderNum;
+        if (invoiceNum) patch.invoice_number = invoiceNum;
+        await sb(`inventory_items?id=eq.${activeItem.id}`, { method: "PATCH", body: JSON.stringify(patch) });
+        setItems((prev) => prev.map((i) => (i.id === activeItem.id ? { ...i, ...patch } : i)));
+      }
+
+      setToast({ t: "success", m: `QC ${result.toUpperCase()} saved - ${inspId}` });
+      setTab("inventory");
+      loadItems();
+    } catch (e) {
+      setToast({ t: "error", m: "Save failed: " + e.message });
+    }
+    setSaving(false);
+  };
+
+  /* ── Checklist helpers ── */
+  const setCheck = (idx, key, val) =>
+    setChecks((prev) => prev.map((c, i) => (i === idx ? { ...c, [key]: val } : c)));
+  const sectionChecks = (s) => checks.filter((c) => c.section === s);
+  const sectionBadge = (s) => {
+    const sc = sectionChecks(s);
+    return `${sc.filter((c) => c.result !== "not_checked").length}/${sc.length}`;
+  };
+  const sectionColor = (s) => {
+    const sc = sectionChecks(s);
+    if (sc.some((c) => c.result === "fail")) return "#dc2626";
+    if (sc.some((c) => c.result === "flag")) return "#f59e0b";
+    if (sc.every((c) => c.result === "pass" || c.result === "na")) return "#16a34a";
+    return "#475569";
+  };
+
+  /* ── Filtered inventory ── */
+  const filtered = items.filter((item) => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || [item.serial_number, item.model_number, item.manufacturer, item.equipment_type, item.catalog_number, item.barcode_sku, item.id]
+      .some((f) => f && String(f).toLowerCase().includes(q));
+    const matchStatus = !statusFilter || item.status === statusFilter;
+    return matchSearch && matchStatus;
   });
 
-  const [checks,setChecks]=useState(()=>
-    CL.flatMap((sec,si)=>sec.items.map((item,ii)=>({
-      section:sec.s,checkItem:item,result:"not_checked",notes:"",sort:si*100+ii,
-    })))
-  );
-
-  const [torque,setTorque]=useState([]);
-  const [torqueSpecs,setTorqueSpecs]=useState([]);
-  const [megger,setMegger]=useState({aToB:"",bToC:"",cToA:"",aToG:"",bToG:"",cToG:"",testV:"1000"});
-  const [errs,setErrs]=useState({});
-
-  /* ── Load torque specs from Supabase ── */
-  const loadTorqueSpecs=useCallback(async(mfr,eqType)=>{
-    try {
-      if (local) return;
-      let q="torque_specs?select=*&order=connection_point";
-      const filters=[];
-      if (mfr) filters.push(`or=(manufacturer.eq.${encodeURIComponent(mfr)},manufacturer.is.null)`);
-      else filters.push("manufacturer=is.null");
-      if (eqType) {
-        const simpleType=EQ.find(e=>e===eqType)?.split(" ")[0]||"";
-        filters.push(`or=(equipment_type.ilike.%25${encodeURIComponent(simpleType)}%25,equipment_type.is.null)`);
-      }
-      const data=await db(`torque_specs?select=*&order=connection_point`);
-      if (data) {
-        // Filter in JS for flexibility
-        const filtered=data.filter(s=>{
-          const mfrMatch=!s.manufacturer||s.manufacturer===mfr;
-          const eqMatch=!s.equipment_type||eqType?.toLowerCase().includes(s.equipment_type?.toLowerCase());
-          return mfrMatch&&eqMatch;
-        });
-        // Prefer manufacturer-specific over generic
-        const byPoint={};
-        filtered.forEach(s=>{
-          const k=s.connection_point;
-          if (!byPoint[k]||s.manufacturer) byPoint[k]=s;
-        });
-        setTorqueSpecs(Object.values(byPoint));
-        setTorque(Object.values(byPoint).map(s=>({
-          loc:s.connection_point,
-          boltSize:s.bolt_size||"",
-          spec:String(s.spec_ft_lbs),
-          specHigh:s.spec_range_high?String(s.spec_range_high):"",
-          actual:"",
-          pass:null,
-          source:s.source||"",
-          notes:s.notes||"",
-        })));
-      }
-    } catch { /* use defaults */ }
-  },[]);
-
-  useEffect(()=>{
-    if (form.manufacturer||form.equipmentType) loadTorqueSpecs(form.manufacturer,form.equipmentType);
-    else setTorque([{loc:"",boltSize:"",spec:"",specHigh:"",actual:"",pass:null,source:"",notes:""}]);
-  },[form.manufacturer,form.equipmentType,loadTorqueSpecs]);
-
-  /* ── OCR ── */
-  const handleScan=async(file)=>{
-    if (!file) return; setScan(true); setMsg(null);
-    try {
-      const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej();r.readAsDataURL(file);});
-      setScanImg(`data:${file.type};base64,${b64}`);
-      const resp=await fetch(`${SB}/functions/v1/scan-nameplate`,{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({image_base64:b64,media_type:file.type})});
-      if (!resp.ok) throw new Error(`Scan returned ${resp.status}`);
-      const p=await resp.json();
-      if (p.error) throw new Error(p.error);
-      setForm(prev=>({...prev,
-        serialNumber:p.serial_number||prev.serialNumber,
-        modelNumber:p.model_number||prev.modelNumber,
-        voltageRating:p.voltage_rating||prev.voltageRating,
-        amperageRating:p.amperage_rating||prev.amperageRating,
-        manufacturer:MFR.find(m=>p.manufacturer&&m.toLowerCase().includes(p.manufacturer.toLowerCase().split("/")[0].trim()))||prev.manufacturer,
-        equipmentType:EQ.find(t=>p.equipment_type&&t.toLowerCase().includes(p.equipment_type.toLowerCase()))||prev.equipmentType,
-      }));
-      setMsg({t:"success",m:"Nameplate scanned successfully"});
-    } catch(e) { setMsg({t:"error",m:"Scan failed: "+e.message+". Enter manually."}); }
-    finally { setScan(false); }
-  };
-
-  /* ── Load inspections ── */
-  const loadInsp=useCallback(async()=>{
-    setLd(true);
-    try {
-      if (!local) { const d=await db("qc_inspections?select=*,qc_checklist_items(*)&order=created_at.desc"); if(d){setInsp(d.map(r=>({...r,checks:(r.qc_checklist_items||[]).sort((a,b)=>a.sort_order-b.sort_order)}))); setLd(false); return;} }
-    } catch { local=true; }
-    setInsp(await sG("wes_qc")||[]);
-    setLd(false);
-  },[]);
-
-  useEffect(()=>{loadInsp();},[loadInsp]);
-
-  /* ── Helpers ── */
-  const uf=(k,v)=>{setForm(p=>({...p,[k]:v}));if(errs[k])setErrs(p=>({...p,[k]:undefined}));};
-  const uc=(i,f,v)=>setChecks(p=>p.map((c,j)=>j===i?{...c,[f]:v}:c));
-  const allSec=(s,r)=>setChecks(p=>p.map(c=>c.section===s?{...c,result:r}:c));
-
-  const uTorque=(i,f,v)=>{
-    setTorque(p=>{
-      const u=p.map((t,j)=>j===i?{...t,[f]:v}:t);
-      if (f==="actual") {
-        const row=u[i]; const spec=parseFloat(row.spec); const hi=parseFloat(row.specHigh)||spec*1.1;
-        const act=parseFloat(v);
-        if (!isNaN(spec)&&!isNaN(act)&&spec>0) u[i]={...u[i],pass:act>=spec*0.9&&act<=hi};
-        else u[i]={...u[i],pass:null};
-      }
-      return u;
-    });
-  };
-
-  const addTorque=()=>setTorque(p=>[...p,{loc:"",boltSize:"",spec:"",specHigh:"",actual:"",pass:null,source:"",notes:""}]);
-  const rmTorque=(i)=>setTorque(p=>p.length>1?p.filter((_,j)=>j!==i):p);
-
-  const validate=()=>{
-    const e={};
-    if(!form.equipmentType)e.equipmentType="Required";
-    if(!form.serialNumber.trim())e.serialNumber="Required";
-    if(!form.inspectedBy.trim())e.inspectedBy="Required";
-    setErrs(e); return Object.keys(e).length===0;
-  };
-
-  const computeRes=(cl,tq)=>{
-    const r=cl.map(c=>c.result);
-    const tf=(tq||[]).some(t=>t.pass===false);
-    if(r.some(x=>x==="fail")||tf) return "fail";
-    if(r.some(x=>x==="flag")) return "conditional";
-    if(r.every(x=>x==="pass"||x==="na")) return "pass";
-    return "pending";
-  };
-
-  /* ── Submit ── */
-  const handleSubmit=async()=>{
-    if(!validate()) return;
-    setSv(true); setMsg(null);
-    const id=`QC-${Date.now().toString(36).toUpperCase()}`;
-    const res=computeRes(checks,torque);
-    const row={id,equipment_type:form.equipmentType,manufacturer:form.manufacturer||null,model_number:form.modelNumber||null,serial_number:form.serialNumber,voltage_rating:form.voltageRating||null,amperage_rating:form.amperageRating||null,job_site:form.jobSite||null,customer_name:form.customerName||null,source_location:form.sourceLocation||null,inspected_by:form.inspectedBy,inspection_date:form.inspectionDate,inspection_type:form.inspectionType,overall_result:res,notes:form.notes||null,sticker_number:null,sticker_signed_by:null,sticker_date:null};
-    const items=[
-      ...checks.map((c,i)=>({inspection_id:id,section:c.section,check_item:c.checkItem,result:c.result,notes:c.notes||null,sort_order:i})),
-      ...torque.filter(t=>t.loc).map((t,i)=>({inspection_id:id,section:"Torque Readings",check_item:`${t.loc}${t.boltSize?` (${t.boltSize})`:""}`,result:t.pass===true?"pass":t.pass===false?"fail":"not_checked",notes:`Spec: ${t.spec||"?"}${t.specHigh?`-${t.specHigh}`:""} ft-lbs | Actual: ${t.actual||"?"} ft-lbs`,sort_order:9000+i})),
-      ...(megger.aToG||megger.bToG||megger.cToG?[{inspection_id:id,section:"Megger Readings",check_item:`Test voltage: ${megger.testV}V`,result:"pass",notes:`A-B:${megger.aToB||"?"} B-C:${megger.bToC||"?"} C-A:${megger.cToA||"?"} A-G:${megger.aToG||"?"} B-G:${megger.bToG||"?"} C-G:${megger.cToG||"?"} M\u03a9`,sort_order:9100}]:[]),
-    ];
-    try {
-      let ok=false;
-      if(!local){try{await db("qc_inspections",{method:"POST",body:JSON.stringify(row)});await db("qc_checklist_items",{method:"POST",body:JSON.stringify(items)});ok=true;}catch{local=true;}}
-      const li={...row,checks:items,created_at:new Date().toISOString()};
-      if(!ok){const u=[li,...insp];setInsp(u);await sS("wes_qc",u);}else{await loadInsp();}
-      setChecks(p=>p.map(c=>({...c,result:"not_checked",notes:""})));
-      setTorque([{loc:"",boltSize:"",spec:"",specHigh:"",actual:"",pass:null,source:"",notes:""}]);
-      setMegger({aToB:"",bToC:"",cToA:"",aToG:"",bToG:"",cToG:"",testV:"1000"});
-      setForm(p=>({...p,serialNumber:"",modelNumber:"",notes:"",voltageRating:"",amperageRating:""}));
-      setScanImg(null); setView("done");
-    } catch(e){setMsg({t:"error",m:"Submit failed: "+e.message});}
-    finally{setSv(false);}
-  };
-
-  /* ── Patch ── */
-  const patch=async(id,u)=>{
-    const ul=insp.map(r=>r.id===id?{...r,...u}:r); setInsp(ul);
-    if(!local){try{const d={};for(const[k,v]of Object.entries(u))d[k.replace(/[A-Z]/g,m=>"_"+m.toLowerCase())]=v===""?null:v;await db(`qc_inspections?id=eq.${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify(d)});return;}catch{local=true;}}
-    await sS("wes_qc",ul);
-  };
-
-  /* ── QC Pass Sticker ── */
-  const issueSticker=(inspection)=>{
-    const stickerNum=`WES-${inspection.serial_number?.replace(/[^A-Z0-9]/gi,"").slice(0,8)}-${today().replace(/-/g,"")}`;
-    patch(inspection.id,{sticker_number:stickerNum,sticker_signed_by:inspection.inspected_by,sticker_date:today()});
-    setShowSticker({...inspection,sticker_number:stickerNum,sticker_signed_by:inspection.inspected_by,sticker_date:today()});
-  };
-
-  /* ── Export ── */
-  const esc=(v)=>{const s=String(v??"");return s.includes(",")||s.includes('"')?`"${s.replace(/"/g,'""')}"`:s;};
-  const exportCSV=()=>{
-    const fi=filtI; if(!fi.length)return alert("Nothing to export.");
-    const h=["QC ID","Date","Inspector","Type","Equipment","Mfr","Model","S/N","Voltage","Amps","Customer","Site","Result","Sticker #","Section","Item","Result","Notes"];
-    const l=[h.map(esc).join(",")];
-    fi.forEach(i=>{(i.checks||i.qc_checklist_items||[]).forEach(c=>{l.push([esc(i.id),esc(i.inspection_date),esc(i.inspected_by),esc(i.inspection_type),esc(i.equipment_type),esc(i.manufacturer),esc(i.model_number),esc(i.serial_number),esc(i.voltage_rating),esc(i.amperage_rating),esc(i.customer_name),esc(i.job_site),esc(i.overall_result),esc(i.sticker_number),esc(c.section),esc(c.check_item||c.checkItem),esc(c.result),esc(c.notes)].join(","));});});
-    const b=new Blob([l.join("\n")],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`WES_QC_${today()}.csv`;a.click();
-  };
-
-  const filtI=filt==="all"?insp:insp.filter(r=>r.overall_result===filt);
-  const byS={}; checks.forEach((c,i)=>{if(!byS[c.section])byS[c.section]=[];byS[c.section].push({...c,idx:i});});
-  const total=checks.length, done=checks.filter(c=>c.result!=="not_checked").length;
-  const fails=checks.filter(c=>c.result==="fail").length+torque.filter(t=>t.pass===false).length;
-  const flags=checks.filter(c=>c.result==="flag").length;
-
+  /* ───────────────────────────────────────────────────── */
+  /* ── RENDER ── */
+  /* ───────────────────────────────────────────────────── */
   return (
-    <div style={{fontFamily:'-apple-system,BlinkMacSystemFont,"SF Pro",sans-serif',maxWidth:480,margin:"0 auto",padding:"12px 16px",color:"#0f172a",minHeight:"100vh",background:"#f1f5f9"}}>
+    <div style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "-apple-system,system-ui,sans-serif", background: "#f1f5f9", minHeight: "100vh" }}>
 
-      {/* ── Header ── */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,padding:"12px 0",borderBottom:"3px solid #0f172a"}}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, padding: "12px 0", borderBottom: "3px solid #0f172a" }}>
         <div>
-          <div style={{fontSize:20,fontWeight:800,letterSpacing:-0.5}}>QC Inspection</div>
-          <div style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>WORLDWIDE ELECTRICAL SERVICES</div>
+          <div style={{ fontSize: 20, fontWeight: 800 }}>WES QC</div>
+          <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>QUALITY CONTROL</div>
         </div>
-        <div style={{display:"flex",gap:4}}>
-          {["form","history"].map(t=>(
-            <button key={t} onClick={()=>setView(t)} style={{padding:"8px 14px",borderRadius:8,border:"none",background:view===t||(t==="form"&&view==="done")?"#0f172a":"#e2e8f0",color:view===t||(t==="form"&&view==="done")?"#fff":"#64748b",fontWeight:700,fontSize:12,cursor:"pointer"}}>
-              {t==="form"?"New":insp.length}
+        <div style={{ display: "flex", gap: 4 }}>
+          {[
+            { k: "inventory", l: "📦" },
+            { k: "form", l: "+" },
+            { k: "history", l: "📋" },
+          ].map((b) => (
+            <button key={b.k} onClick={() => { setTab(b.k); if (b.k === "history") loadHistory(); if (b.k === "inventory") loadItems(); }}
+              style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: tab === b.k ? "#0f172a" : "#e2e8f0", color: tab === b.k ? "#fff" : "#64748b", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+              {b.l}
             </button>
           ))}
         </div>
       </div>
 
-      {msg&&(<div style={{padding:"12px 16px",background:msg.t==="error"?"#fef2f2":"#ecfdf5",border:`1px solid ${msg.t==="error"?"#fecaca":"#a7f3d0"}`,borderRadius:10,color:msg.t==="error"?"#dc2626":"#065f46",fontSize:14,marginBottom:12,display:"flex",justifyContent:"space-between"}}>
-        <span>{msg.m}</span>
-        <button onClick={()=>setMsg(null)} style={{background:"none",border:"none",fontWeight:700,cursor:"pointer",color:"inherit"}}>&times;</button>
-      </div>)}
+      {/* Toast */}
+      {toast && (
+        <div style={{ padding: 12, background: toast.t === "error" ? "#fef2f2" : "#ecfdf5", border: `1px solid ${toast.t === "error" ? "#fecaca" : "#a7f3d0"}`, borderRadius: 10, color: toast.t === "error" ? "#dc2626" : "#065f46", fontSize: 13, marginBottom: 12, display: "flex", justifyContent: "space-between" }}>
+          <span>{toast.m}</span>
+          <button onClick={() => setToast(null)} style={{ background: "none", border: "none", fontWeight: 700, cursor: "pointer", color: "inherit" }}>×</button>
+        </div>
+      )}
 
-      {/* ════ FORM ════ */}
-      {view==="form"&&(
+      {/* ── MANUAL ENTRY TAB ── */}
+      {tab === "form" && (
         <div>
-          {/* Scanner */}
-          <div style={{...card,textAlign:"center",border:"2px dashed #cbd5e1",background:"#f8fafc"}}>
-            <div style={{fontSize:15,fontWeight:800,marginBottom:6}}>{scan?"Scanning...":"\uD83D\uDCF7 Scan Nameplate"}</div>
-            <div style={{fontSize:13,color:"#6b7280",marginBottom:12}}>Auto-fills serial, model, manufacturer, voltage, amps</div>
-            <label style={{display:"inline-block",padding:"14px 28px",borderRadius:10,background:scan?"#94a3b8":"#2563eb",color:"#fff",fontWeight:700,fontSize:15,cursor:scan?"not-allowed":"pointer"}}>
-              {scan?"Processing...":"Take Photo"}
-              <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={e=>handleScan(e.target.files?.[0])} style={{display:"none"}} disabled={scan}/>
-            </label>
-            {scanImg&&<div style={{marginTop:12}}><img src={scanImg} alt="Nameplate" style={{maxHeight:100,borderRadius:8,border:"1px solid #e5e7eb"}}/></div>}
-          </div>
-
-          {/* Equipment */}
+          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>New QC Inspection (Manual Entry)</div>
           <div style={card}>
-            <div style={{fontSize:15,fontWeight:800,marginBottom:12}}>Equipment</div>
-            <div style={{marginBottom:10}}><label style={lbl}>Type *</label><select style={errs.equipmentType?inpE:inp} value={form.equipmentType} onChange={e=>uf("equipmentType",e.target.value)}><option value="">Select</option>{EQ.map(t=><option key={t}>{t}</option>)}</select>{errs.equipmentType&&<div style={err}>{errs.equipmentType}</div>}</div>
-            <div style={{marginBottom:10}}><label style={lbl}>Manufacturer</label><select style={inp} value={form.manufacturer} onChange={e=>uf("manufacturer",e.target.value)}><option value="">Select</option>{MFR.map(m=><option key={m}>{m}</option>)}</select></div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-              <div><label style={lbl}>Serial # *</label><input style={errs.serialNumber?inpE:inp} value={form.serialNumber} onChange={e=>uf("serialNumber",e.target.value)} placeholder="Serial"/>{errs.serialNumber&&<div style={err}>{errs.serialNumber}</div>}</div>
-              <div><label style={lbl}>Model #</label><input style={inp} value={form.modelNumber} onChange={e=>uf("modelNumber",e.target.value)} placeholder="Model"/></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Equipment Type *</label>
+                <select style={inputSm} value={equip.equipmentType} onChange={(e) => setE("equipmentType", e.target.value)}>
+                  <option value="">Select</option>
+                  {EQUIP_TYPES.map((t) => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Manufacturer</label>
+                <select style={inputSm} value={equip.manufacturer} onChange={(e) => setE("manufacturer", e.target.value)}>
+                  <option value="">Select</option>
+                  {MFRS.map((m) => <option key={m}>{m}</option>)}
+                </select>
+              </div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-              <div><label style={lbl}>Voltage</label><input style={inp} value={form.voltageRating} onChange={e=>uf("voltageRating",e.target.value)} placeholder="480V"/></div>
-              <div><label style={lbl}>Amperage</label><input style={inp} value={form.amperageRating} onChange={e=>uf("amperageRating",e.target.value)} placeholder="1200A"/></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+              <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>S/N</label><input style={inputSm} value={equip.serialNumber} onChange={(e) => setE("serialNumber", e.target.value)} /></div>
+              <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Model</label><input style={inputSm} value={equip.modelNumber} onChange={(e) => setE("modelNumber", e.target.value)} /></div>
+              <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Cat #</label><input style={inputSm} value={equip.catalogNumber} onChange={(e) => setE("catalogNumber", e.target.value)} /></div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div><label style={lbl}>Customer</label><input style={inp} value={form.customerName} onChange={e=>uf("customerName",e.target.value)} placeholder="Customer"/></div>
-              <div><label style={lbl}>Job Site</label><input style={inp} value={form.jobSite} onChange={e=>uf("jobSite",e.target.value)} placeholder="Site"/></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+              <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Amps</label><input style={inputSm} value={equip.amperageRating} onChange={(e) => setE("amperageRating", e.target.value)} /></div>
+              <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Volts</label><input style={inputSm} value={equip.voltageRating} onChange={(e) => setE("voltageRating", e.target.value)} /></div>
+              <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>KVA</label><input style={inputSm} value={equip.kvaRating} onChange={(e) => setE("kvaRating", e.target.value)} /></div>
             </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+              <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Job Site</label><input style={inputSm} value={equip.jobSite} onChange={(e) => setE("jobSite", e.target.value)} placeholder="Origin" /></div>
+              <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Customer</label><input style={inputSm} value={equip.customerName} onChange={(e) => setE("customerName", e.target.value)} /></div>
+            </div>
+            <button onClick={() => {
+              if (!equip.equipmentType) { setToast({ t: "error", m: "Equipment type required" }); return; }
+              setActiveItem(null);
+              resetInspection(equip.manufacturer, equip.equipmentType);
+              setTab("inspect");
+            }} style={{ width: "100%", padding: 14, borderRadius: 10, border: "none", background: "#0f172a", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+              Start Inspection
+            </button>
           </div>
+        </div>
+      )}
 
-          {/* Inspector */}
-          <div style={card}>
-            <div style={{fontSize:15,fontWeight:800,marginBottom:12}}>Inspector</div>
-            <div style={{marginBottom:10}}><label style={lbl}>Inspected By *</label><input style={errs.inspectedBy?inpE:inp} value={form.inspectedBy} onChange={e=>uf("inspectedBy",e.target.value)} placeholder="Your name"/>{errs.inspectedBy&&<div style={err}>{errs.inspectedBy}</div>}</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div><label style={lbl}>Date</label><input style={inp} type="date" value={form.inspectionDate} onChange={e=>uf("inspectionDate",e.target.value)}/></div>
-              <div><label style={lbl}>Type</label><select style={inp} value={form.inspectionType} onChange={e=>uf("inspectionType",e.target.value)}>{IT.map(t=><option key={t.v} value={t.v}>{t.l}</option>)}</select></div>
-            </div>
+      {/* ── INVENTORY TAB ── */}
+      {tab === "inventory" && (
+        <div>
+          <input style={{ ...inputBase, marginBottom: 8 }} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search S/N, model, SKU..." />
+          <div style={{ display: "flex", gap: 4, marginBottom: 10, overflowX: "auto", paddingBottom: 4 }}>
+            {[{ v: "", l: "All" }, { v: "received", l: "Received" }, { v: "in_qc", l: "In QC" }, { v: "qc_pass", l: "Passed" }, { v: "qc_fail", l: "Failed" }, { v: "ready", l: "Ready" }, { v: "staged_for_ship", l: "Staged" }, { v: "refurb", l: "Refurb" }].map((f) => (
+              <button key={f.v} onClick={() => setStatusFilter(f.v)} style={{
+                padding: "6px 10px", borderRadius: 8,
+                border: `1.5px solid ${statusFilter === f.v ? SC[f.v] || "#0f172a" : "#e2e8f0"}`,
+                background: statusFilter === f.v ? (SC[f.v] || "#0f172a") + "15" : "#fff",
+                color: statusFilter === f.v ? SC[f.v] || "#0f172a" : "#94a3b8",
+                fontWeight: 700, fontSize: 10, cursor: "pointer", whiteSpace: "nowrap",
+              }}>{f.l}</button>
+            ))}
           </div>
+          <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>{filtered.length} items</div>
 
-          {/* Progress */}
-          <div style={{...card,padding:12}}>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700,marginBottom:6}}>
-              <span>{done}/{total} checked</span>
-              <span>{fails>0&&<span style={{color:"#dc2626"}}>{fails} fail </span>}{flags>0&&<span style={{color:"#f59e0b"}}>{flags} flag</span>}</span>
+          {loading && <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Loading...</div>}
+          {!loading && filtered.length === 0 && (
+            <div style={{ textAlign: "center", padding: 40 }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>📦</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#475569" }}>No items</div>
+              <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>Tap + for manual entry</div>
             </div>
-            <div style={{height:8,background:"#e5e7eb",borderRadius:4,overflow:"hidden"}}>
-              <div style={{height:"100%",width:`${total>0?(done/total)*100:0}%`,background:fails>0?"#dc2626":flags>0?"#f59e0b":"#16a34a",borderRadius:4,transition:"width 0.3s"}}/>
-            </div>
-          </div>
+          )}
 
-          {/* Checklist Sections (collapsible) */}
-          {CL.map(sec=>{
-            const items=byS[sec.s]||[];
-            const open=openSec[sec.s]!==false;
-            const sf=items.filter(c=>c.result==="fail").length;
-            const sp=items.filter(c=>c.result==="pass").length;
+          {filtered.map((item) => {
+            const c = SC[item.status] || "#6b7280";
             return (
-              <div key={sec.s} style={{...card,padding:0,overflow:"hidden"}}>
-                <button onClick={()=>toggle(sec.s)} style={{width:"100%",padding:"14px 16px",border:"none",background:sf>0?"#fef2f2":"#f8fafc",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",textAlign:"left"}}>
-                  <div>
-                    <div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>{sec.s}</div>
-                    <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{sp}/{items.length} pass{sf>0?` \u2022 ${sf} fail`:""}</div>
-                  </div>
-                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                    <span style={{fontSize:18,color:"#94a3b8"}}>{open?"\u25B2":"\u25BC"}</span>
-                  </div>
-                </button>
-                {open&&(
-                  <div>
-                    <div style={{display:"flex",gap:6,padding:"8px 16px",borderBottom:"1px solid #f1f5f9"}}>
-                      <button onClick={()=>allSec(sec.s,"pass")} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid #d1d5db",background:"#fff",color:"#16a34a",fontWeight:700,fontSize:12,cursor:"pointer"}}>All Pass</button>
-                      <button onClick={()=>allSec(sec.s,"na")} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid #d1d5db",background:"#fff",color:"#94a3b8",fontWeight:700,fontSize:12,cursor:"pointer"}}>All N/A</button>
+              <div key={item.id} style={{ ...card, borderLeft: `4px solid ${c}`, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13, fontWeight: 800 }}>{item.equipment_type || "?"}</span>
+                      {item.manufacturer && <span style={{ fontSize: 11, color: "#64748b" }}>{item.manufacturer}</span>}
+                      <span style={{ padding: "2px 8px", borderRadius: 6, background: c + "18", color: c, fontSize: 9, fontWeight: 800 }}>{SL[item.status] || item.status}</span>
+                      {item.qc_sticker && <span style={{ padding: "2px 6px", borderRadius: 6, background: "#16a34a18", color: "#16a34a", fontSize: 9, fontWeight: 700 }}>QC: {item.qc_sticker}</span>}
+                      {item.order_number && <span style={{ padding: "2px 6px", borderRadius: 6, background: "#0369a118", color: "#0369a1", fontSize: 9, fontWeight: 700 }}>Order: {item.order_number}</span>}
+                      {item.invoice_number && <span style={{ padding: "2px 6px", borderRadius: 6, background: "#7c3aed18", color: "#7c3aed", fontSize: 9, fontWeight: 700 }}>Inv: {item.invoice_number}</span>}
                     </div>
-                    {items.map(c=>(
-                      <div key={c.idx} style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9"}}>
-                        <div style={{fontSize:14,color:"#334155",marginBottom:8,lineHeight:1.4}}>{c.checkItem}</div>
-                        <div style={{display:"flex",gap:6,marginBottom:6}}>
-                          {RO.map(r=>(
-                            <button key={r.v} onClick={()=>uc(c.idx,"result",r.v)}
-                              style={{flex:1,padding:"10px 0",borderRadius:8,border:`2px solid ${c.result===r.v?r.c:"#e2e8f0"}`,background:c.result===r.v?r.c+"15":"#fff",color:c.result===r.v?r.c:"#cbd5e1",fontWeight:800,fontSize:12,cursor:"pointer",textAlign:"center"}}>
-                              {r.i} {r.l}
-                            </button>
-                          ))}
-                        </div>
-                        <input style={inpSm} placeholder="Notes..." value={c.notes} onChange={e=>uc(c.idx,"notes",e.target.value)}/>
+                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                      {item.serial_number ? `S/N: ${item.serial_number}` : ""}
+                      {item.amperage_rating ? ` ${item.amperage_rating}A` : ""}
+                      {item.kva_rating ? ` ${item.kva_rating}KVA` : ""}
+                      {item.voltage_rating ? ` ${item.voltage_rating}V` : ""}
+                    </div>
+                    {(item.putaway_location || item.barcode_sku) && (
+                      <div style={{ display: "flex", gap: 4, marginTop: 3 }}>
+                        {item.putaway_location && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "#8b5cf618", color: "#8b5cf6", fontWeight: 600 }}>📍 {item.putaway_location}</span>}
+                        {item.barcode_sku && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "#f59e0b18", color: "#f59e0b", fontWeight: 600 }}>SKU: {item.barcode_sku}</span>}
                       </div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {(item.status === "received" || item.status === "in_qc") && (
+                      <button onClick={() => startQCFromItem(item)} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#0f172a", color: "#fff", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>Start QC</button>
+                    )}
+                    {item.status === "qc_pass" && <button onClick={() => changeStatus(item.id, "ready")} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #16a34a", background: "#fff", color: "#16a34a", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>→ Ready</button>}
+                    {item.status === "ready" && <button onClick={() => changeStatus(item.id, "staged_for_ship")} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #0891b2", background: "#fff", color: "#0891b2", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>→ Stage</button>}
+                    {item.status === "staged_for_ship" && <button onClick={() => changeStatus(item.id, "shipped")} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #475569", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>→ Ship</button>}
+                    {item.status === "qc_fail" && <button onClick={() => changeStatus(item.id, "refurb")} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #8b5cf6", background: "#fff", color: "#8b5cf6", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>→ Refurb</button>}
+                  </div>
+                </div>
+                {!["received", "in_qc"].includes(item.status) && (
+                  <div style={{ display: "flex", gap: 3, marginTop: 6, flexWrap: "wrap" }}>
+                    {STATUSES.filter((s) => s.v !== item.status && ["received", "ready", "staged_for_ship", "refurb", "listed", "scrapped"].includes(s.v)).map((s) => (
+                      <button key={s.v} onClick={() => changeStatus(item.id, s.v)} style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${s.c}22`, background: "#fff", color: s.c, fontWeight: 600, fontSize: 9, cursor: "pointer" }}>{s.l}</button>
                     ))}
                   </div>
                 )}
@@ -371,181 +681,291 @@ export default function QCChecklist() {
             );
           })}
 
-          {/* Torque Readings */}
-          <div style={{...card,padding:0,overflow:"hidden"}}>
-            <button onClick={()=>toggle("torque")} style={{width:"100%",padding:"14px 16px",border:"none",background:"#fefce8",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}>
-              <div><div style={{fontSize:14,fontWeight:800}}>Torque Readings</div><div style={{fontSize:11,color:"#92400e"}}>Spec auto-loaded from {form.manufacturer||"database"}</div></div>
-              <span style={{fontSize:18,color:"#94a3b8"}}>{openSec.torque!==false?"\u25B2":"\u25BC"}</span>
-            </button>
-            {openSec.torque!==false&&(
-              <div style={{padding:16}}>
-                {torque.map((t,i)=>(
-                  <div key={i} style={{background:"#fafaf9",borderRadius:10,padding:12,marginBottom:8,border:`1.5px solid ${t.pass===false?"#fecaca":t.pass===true?"#bbf7d0":"#e5e7eb"}`}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-                      <span style={{fontSize:12,fontWeight:700,color:"#475569"}}>POINT {i+1}</span>
-                      <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                        {t.pass===true&&<span style={{color:"#16a34a",fontWeight:800}}>{"\u2713"} PASS</span>}
-                        {t.pass===false&&<span style={{color:"#dc2626",fontWeight:800}}>{"\u2717"} FAIL</span>}
-                        {torque.length>1&&<button onClick={()=>rmTorque(i)} style={{background:"none",border:"none",color:"#ef4444",fontSize:18,cursor:"pointer"}}>&times;</button>}
-                      </div>
-                    </div>
-                    <div style={{marginBottom:8}}><input style={inpSm} value={t.loc} onChange={e=>uTorque(i,"loc",e.target.value)} placeholder="Connection point"/></div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-                      <div><label style={{fontSize:11,fontWeight:600,color:"#6b7280"}}>Bolt</label><input style={inpSm} value={t.boltSize} onChange={e=>uTorque(i,"boltSize",e.target.value)} placeholder="3/8-16"/></div>
-                      <div><label style={{fontSize:11,fontWeight:600,color:"#6b7280"}}>Spec ft-lbs</label><input style={inpSm} type="number" value={t.spec} onChange={e=>uTorque(i,"spec",e.target.value)} placeholder="Spec"/></div>
-                      <div><label style={{fontSize:11,fontWeight:600,color:t.pass===false?"#dc2626":"#6b7280"}}>Actual ft-lbs</label><input style={{...inpSm,borderColor:t.pass===false?"#dc2626":t.pass===true?"#16a34a":"#d1d5db"}} type="number" value={t.actual} onChange={e=>uTorque(i,"actual",e.target.value)} placeholder="Actual"/></div>
-                    </div>
-                    {t.source&&<div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>Source: {t.source}{t.notes?` | ${t.notes}`:""}</div>}
-                  </div>
-                ))}
-                <button onClick={addTorque} style={{width:"100%",padding:12,borderRadius:10,border:"2px dashed #d1d5db",background:"#fff",color:"#2563eb",fontWeight:700,fontSize:14,cursor:"pointer"}}>+ Add Torque Point</button>
-              </div>
-            )}
+          <div style={{ textAlign: "center", padding: 12 }}>
+            <button onClick={loadItems} style={{ padding: "10px 24px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#475569", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Refresh</button>
           </div>
+        </div>
+      )}
+
+      {/* ── INSPECT TAB ── */}
+      {tab === "inspect" && (
+        <div>
+          {/* Equipment header */}
+          <div style={{ ...card, background: "#0f172a", color: "#fff" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800 }}>{equip.equipmentType}</div>
+                <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                  {equip.manufacturer || ""} {equip.serialNumber ? `| S/N: ${equip.serialNumber}` : ""}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
+                  {equip.amperageRating ? `${equip.amperageRating}A ` : ""}
+                  {equip.kvaRating ? `${equip.kvaRating}KVA ` : ""}
+                  {equip.voltageRating ? `${equip.voltageRating}V ` : ""}
+                  {equip.catalogNumber ? `Cat: ${equip.catalogNumber}` : ""}
+                </div>
+              </div>
+              {activeItem && (
+                <div style={{ fontSize: 9, color: "#64748b", textAlign: "right" }}>
+                  INV: {activeItem.id}<br />{activeItem.putaway_location || ""}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Inspector Info */}
+          <Section title="Inspector Info" defaultOpen={true} color="#0f172a">
+            {/* Date prominent */}
+            <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: "#f0f9ff", border: "1px solid #bae6fd" }}>
+              <label style={{ fontSize: 10, fontWeight: 700, color: "#0369a1" }}>Inspection Date</label>
+              <input style={{ ...inputSm, border: "1.5px solid #7dd3fc", fontWeight: 700, fontSize: 16 }} type="date" value={meta.inspectionDate} onChange={(e) => setMeta((p) => ({ ...p, inspectionDate: e.target.value }))} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Inspector *</label>
+                <input style={inputSm} value={meta.inspectedBy} onChange={(e) => setMeta((p) => ({ ...p, inspectedBy: e.target.value }))} placeholder="Name" />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Inspection Type</label>
+                <div style={{ display: "flex", gap: 3 }}>
+                  {INSP_TYPES.map((t) => (
+                    <button key={t.v} onClick={() => setMeta((p) => ({ ...p, inspectionType: t.v }))} style={{
+                      flex: 1, padding: "8px 0", borderRadius: 6,
+                      border: `2px solid ${meta.inspectionType === t.v ? "#0f172a" : "#e2e8f0"}`,
+                      background: meta.inspectionType === t.v ? "#0f172a" : "#fff",
+                      color: meta.inspectionType === t.v ? "#fff" : "#94a3b8",
+                      fontWeight: 700, fontSize: 9, cursor: "pointer",
+                    }}>{t.l}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Invoice #</label>
+                <input style={inputSm} value={invoiceNum} onChange={(e) => setInvoiceNum(e.target.value)} placeholder="INV-001" />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Order #</label>
+                <input style={inputSm} value={orderNum} onChange={(e) => setOrderNum(e.target.value)} placeholder="PO#" />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>QC Sticker #</label>
+                <input style={inputSm} value={stickerNum} onChange={(e) => setStickerNum(e.target.value)} placeholder="QC-001" />
+              </div>
+            </div>
+          </Section>
+
+          {/* Checklist sections */}
+          {SECTIONS.map((sec) => {
+            const sc = sectionChecks(sec.s);
+            const color = sectionColor(sec.s);
+            return (
+              <Section key={sec.s} title={sec.s} badge={sectionBadge(sec.s)} color={color} count={sc.filter((c) => c.result === "fail").length} countColor="#dc2626">
+                {sc.map((c, ci) => {
+                  const idx = checks.findIndex((ch) => ch.section === c.section && ch.checkItem === c.checkItem);
+                  return (
+                    <div key={ci} style={{
+                      marginBottom: 8, padding: 10, borderRadius: 8,
+                      background: c.result === "fail" ? "#fef2f215" : c.result === "flag" ? "#fef3c715" : "#fff",
+                      border: `1px solid ${c.result === "fail" ? "#fecaca" : c.result === "flag" ? "#fde68a" : "#f1f5f9"}`,
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#1e293b", marginBottom: 6 }}>{c.checkItem}</div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {RESULTS.map((r) => (
+                          <button key={r.v} onClick={() => setCheck(idx, "result", r.v)} style={{
+                            flex: 1, padding: "8px 0", borderRadius: 6,
+                            border: `2px solid ${c.result === r.v ? r.c : "#e5e7eb"}`,
+                            background: c.result === r.v ? r.c + "15" : "#fff",
+                            color: c.result === r.v ? r.c : "#cbd5e1",
+                            fontWeight: 800, fontSize: 12, cursor: "pointer",
+                          }}>{r.i} {r.l}</button>
+                        ))}
+                      </div>
+                      {(c.result === "fail" || c.result === "flag") && (
+                        <input style={{ ...inputSm, marginTop: 6, borderColor: c.result === "fail" ? "#fecaca" : "#fde68a" }}
+                          value={c.notes} onChange={(e) => setCheck(idx, "notes", e.target.value)} placeholder="Notes..." />
+                      )}
+                    </div>
+                  );
+                })}
+              </Section>
+            );
+          })}
 
           {/* Megger */}
-          <div style={{...card,padding:0,overflow:"hidden"}}>
-            <button onClick={()=>toggle("megger")} style={{width:"100%",padding:"14px 16px",border:"none",background:"#eff6ff",display:"flex",justifyContent:"space-between",cursor:"pointer"}}>
-              <div><div style={{fontSize:14,fontWeight:800}}>Megger Readings (M\u03a9)</div></div>
-              <span style={{fontSize:18,color:"#94a3b8"}}>{openSec.megger!==false?"\u25B2":"\u25BC"}</span>
-            </button>
-            {openSec.megger!==false&&(
-              <div style={{padding:16}}>
-                <div style={{marginBottom:10}}><label style={lbl}>Test Voltage</label><select style={inp} value={megger.testV} onChange={e=>setMegger(p=>({...p,testV:e.target.value}))}><option value="500">500V</option><option value="1000">1000V</option><option value="2500">2500V</option><option value="5000">5000V</option></select></div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-                  <div><label style={lbl}>A-B</label><input style={inp} value={megger.aToB} onChange={e=>setMegger(p=>({...p,aToB:e.target.value}))} placeholder="M\u03a9"/></div>
-                  <div><label style={lbl}>B-C</label><input style={inp} value={megger.bToC} onChange={e=>setMegger(p=>({...p,bToC:e.target.value}))} placeholder="M\u03a9"/></div>
-                  <div><label style={lbl}>C-A</label><input style={inp} value={megger.cToA} onChange={e=>setMegger(p=>({...p,cToA:e.target.value}))} placeholder="M\u03a9"/></div>
+          <Section title="Megger / Insulation Resistance" badge={Object.values(megger).filter((v) => v && v !== "1000").length > 0 ? "recorded" : ""} color="#7c3aed">
+            <div style={{ marginBottom: 6 }}>
+              <label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Test Voltage</label>
+              <div style={{ display: "flex", gap: 4 }}>
+                {["500", "1000", "2500", "5000"].map((v) => (
+                  <button key={v} onClick={() => setMegger((p) => ({ ...p, testV: v }))} style={{
+                    flex: 1, padding: "8px 0", borderRadius: 6,
+                    border: `2px solid ${megger.testV === v ? "#7c3aed" : "#e5e7eb"}`,
+                    background: megger.testV === v ? "#7c3aed15" : "#fff",
+                    color: megger.testV === v ? "#7c3aed" : "#94a3b8",
+                    fontWeight: 700, fontSize: 11, cursor: "pointer",
+                  }}>{v}V</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", marginTop: 8, marginBottom: 4 }}>Phase-to-Phase (MΩ)</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 8 }}>
+              {[["A-B", "aToB"], ["B-C", "bToC"], ["C-A", "cToA"]].map(([label, key]) => (
+                <div key={key}><label style={{ fontSize: 9, color: "#94a3b8" }}>{label}</label><input style={inputSm} value={megger[key]} onChange={(e) => setMegger((p) => ({ ...p, [key]: e.target.value }))} placeholder="MΩ" /></div>
+              ))}
+            </div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 4 }}>Phase-to-Ground (MΩ)</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+              {[["A-G", "aToG"], ["B-G", "bToG"], ["C-G", "cToG"]].map(([label, key]) => (
+                <div key={key}><label style={{ fontSize: 9, color: "#94a3b8" }}>{label}</label><input style={inputSm} value={megger[key]} onChange={(e) => setMegger((p) => ({ ...p, [key]: e.target.value }))} placeholder="MΩ" /></div>
+              ))}
+            </div>
+          </Section>
+
+          {/* Torque */}
+          <Section title="Torque Verification" badge={torques.length > 0 ? `${torques.filter((t) => t.actual).length}/${torques.length}` : ""} color="#0369a1">
+            {torques.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", padding: 8 }}>No torque specs for this equipment.</div>}
+            {torques.map((t, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 6, marginBottom: 6, alignItems: "end" }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: "#475569" }}>{t.loc || "Custom"}</div>
+                  <div style={{ fontSize: 9, color: "#94a3b8" }}>{t.boltSize ? `${t.boltSize} ` : ""}{t.spec}{t.specHigh ? `-${t.specHigh}` : ""} ft-lbs</div>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-                  <div><label style={lbl}>A-Gnd</label><input style={inp} value={megger.aToG} onChange={e=>setMegger(p=>({...p,aToG:e.target.value}))} placeholder="M\u03a9"/></div>
-                  <div><label style={lbl}>B-Gnd</label><input style={inp} value={megger.bToG} onChange={e=>setMegger(p=>({...p,bToG:e.target.value}))} placeholder="M\u03a9"/></div>
-                  <div><label style={lbl}>C-Gnd</label><input style={inp} value={megger.cToG} onChange={e=>setMegger(p=>({...p,cToG:e.target.value}))} placeholder="M\u03a9"/></div>
+                <div>
+                  <input style={{ ...inputSm, padding: "8px" }} value={t.actual} onChange={(e) => {
+                    const n = [...torques]; n[i].actual = e.target.value;
+                    n[i].pass = parseFloat(e.target.value) >= parseFloat(t.spec) && (!t.specHigh || parseFloat(e.target.value) <= parseFloat(t.specHigh));
+                    setTorques(n);
+                  }} placeholder="Actual" />
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  {t.actual && <span style={{ fontSize: 18, color: t.pass ? "#16a34a" : "#dc2626" }}>{t.pass ? "✓" : "✗"}</span>}
                 </div>
               </div>
+            ))}
+            <button onClick={() => setTorques((p) => [...p, { loc: "", boltSize: "", spec: "", specHigh: "", actual: "", pass: null }])} style={{ padding: "6px 12px", borderRadius: 6, border: "1px dashed #94a3b8", background: "#fff", color: "#64748b", fontWeight: 600, fontSize: 10, cursor: "pointer", width: "100%" }}>+ Add Point</button>
+          </Section>
+
+          {/* Deficiencies */}
+          <Section title="Deficiencies" badge={deficiencies.length || ""} color="#dc2626">
+            {deficiencies.map((d, i) => (
+              <div key={i} style={{ padding: 10, borderRadius: 8, border: "1px solid #fecaca", marginBottom: 6, background: "#fef2f2" }}>
+                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                  <select style={{ ...inputSm, flex: 1, padding: "8px" }} value={d.category} onChange={(e) => { const n = [...deficiencies]; n[i].category = e.target.value; setDeficiencies(n); }}>
+                    <option value="">Category</option>
+                    {["Cosmetic", "Structural", "Electrical", "Mechanical", "Safety", "Missing Part", "Other"].map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                  <select style={{ ...inputSm, flex: 1, padding: "8px" }} value={d.severity} onChange={(e) => { const n = [...deficiencies]; n[i].severity = e.target.value; setDeficiencies(n); }}>
+                    {["minor", "moderate", "major", "critical"].map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                  <button onClick={() => setDeficiencies((p) => p.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "#ef4444", fontSize: 18, cursor: "pointer" }}>×</button>
+                </div>
+                <input style={{ ...inputSm, marginBottom: 4 }} value={d.description} onChange={(e) => { const n = [...deficiencies]; n[i].description = e.target.value; setDeficiencies(n); }} placeholder="Describe..." />
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <label style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 4 }}>
+                    <input type="checkbox" checked={d.repairNeeded} onChange={(e) => { const n = [...deficiencies]; n[i].repairNeeded = e.target.checked; setDeficiencies(n); }} /> Repair
+                  </label>
+                  {d.repairNeeded && <input style={{ ...inputSm, width: 80, padding: "6px" }} type="number" value={d.repairEstimate || ""} onChange={(e) => { const n = [...deficiencies]; n[i].repairEstimate = e.target.value; setDeficiencies(n); }} placeholder="$" />}
+                </div>
+              </div>
+            ))}
+            <button onClick={() => setDeficiencies((p) => [...p, { category: "", description: "", severity: "moderate", repairNeeded: false, repairEstimate: "" }])} style={{ padding: 8, borderRadius: 6, border: "1px dashed #dc2626", background: "#fff", color: "#dc2626", fontWeight: 600, fontSize: 11, cursor: "pointer", width: "100%" }}>+ Deficiency</button>
+          </Section>
+
+          {/* Photos */}
+          <Section title="Photos" badge={photos.length || ""} color="#475569">
+            {photos.length > 0 && (
+              <div style={{ display: "flex", gap: 6, marginBottom: 8, overflowX: "auto", paddingBottom: 4 }}>
+                {photos.map((url, i) => <img key={i} src={url} alt="" style={{ width: 70, height: 70, borderRadius: 8, objectFit: "cover", border: "2px solid #e5e7eb", flexShrink: 0 }} />)}
+              </div>
             )}
-          </div>
+            <label style={{ display: "block", padding: 12, borderRadius: 8, border: "1px dashed #94a3b8", background: "#fff", color: "#64748b", fontWeight: 600, fontSize: 12, textAlign: "center", cursor: "pointer" }}>
+              📸 Add Photo
+              <input type="file" accept="image/*" capture="environment" onChange={(e) => handlePhoto(e.target.files?.[0])} style={{ display: "none" }} />
+            </label>
+          </Section>
 
           {/* Notes */}
-          <div style={card}>
-            <label style={lbl}>General Notes</label>
-            <textarea style={{...inp,minHeight:80,resize:"vertical"}} value={form.notes} onChange={e=>uf("notes",e.target.value)} placeholder="Repairs needed, parts required, follow-up..."/>
-          </div>
+          <Section title="Notes" defaultOpen={false} color="#475569">
+            <textarea style={{ ...inputSm, minHeight: 60, resize: "vertical" }} value={meta.notes} onChange={(e) => setMeta((p) => ({ ...p, notes: e.target.value }))} placeholder="General notes..." />
+          </Section>
 
-          {/* Submit */}
-          <button onClick={handleSubmit} disabled={sv} style={{width:"100%",padding:16,borderRadius:12,border:"none",background:sv?"#94a3b8":fails>0?"linear-gradient(135deg,#dc2626,#b91c1c)":"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",fontSize:17,fontWeight:800,cursor:sv?"not-allowed":"pointer",marginBottom:24,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>
-            {sv?"Submitting...":computeRes(checks,torque).toUpperCase()}
-          </button>
-        </div>
-      )}
-
-      {/* ════ DONE ════ */}
-      {view==="done"&&insp.length>0&&(()=>{
-        const i0=insp[0]; const c0=rc[i0.overall_result]||"#6b7280";
-        return (
-          <div style={{...card,textAlign:"center",padding:32,borderLeft:`4px solid ${c0}`}}>
-            <div style={{fontSize:48,marginBottom:8}}>{i0.overall_result==="pass"?"\u2713":i0.overall_result==="fail"?"\u2717":"\u26a0"}</div>
-            <div style={{fontSize:20,fontWeight:800}}>{i0.overall_result==="pass"?"PASSED":"INSPECTION RECORDED"}</div>
-            <div style={{color:"#6b7280",fontSize:15,margin:"8px 0"}}><strong>{i0.id}</strong></div>
-            <div style={{fontSize:16,fontWeight:700,color:c0,marginBottom:6}}>{i0.overall_result?.toUpperCase()}</div>
-            <div style={{fontSize:13,color:"#475569",marginBottom:20}}>{i0.equipment_type} | S/N: {i0.serial_number}</div>
-            {i0.overall_result==="pass"&&(
-              <button onClick={()=>issueSticker(i0)} style={{width:"100%",padding:16,borderRadius:12,border:"none",background:"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",fontSize:16,fontWeight:800,cursor:"pointer",marginBottom:12,boxShadow:"0 4px 12px rgba(22,163,106,0.3)"}}>
-                Issue QC Pass Sticker
-              </button>
-            )}
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>setView("form")} style={{flex:1,padding:14,borderRadius:10,border:"none",background:"#f59e0b",color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer"}}>New</button>
-              <button onClick={()=>setView("history")} style={{flex:1,padding:14,borderRadius:10,border:"none",background:"#0f172a",color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer"}}>History</button>
+          {/* Summary / Save */}
+          <div style={{ ...card, background: "#f8fafc", border: "2px solid #e2e8f0" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>Summary</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
+              {[
+                { l: "Pass", c: "#16a34a", n: checks.filter((c) => c.result === "pass").length },
+                { l: "Fail", c: "#dc2626", n: checks.filter((c) => c.result === "fail").length },
+                { l: "Flag", c: "#f59e0b", n: checks.filter((c) => c.result === "flag").length },
+                { l: "N/A", c: "#94a3b8", n: checks.filter((c) => c.result === "na").length },
+              ].map((s) => (
+                <div key={s.l} style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: s.c }}>{s.n}</div>
+                  <div style={{ fontSize: 10, color: "#64748b" }}>{s.l}</div>
+                </div>
+              ))}
             </div>
-          </div>
-        );
-      })()}
-
-      {/* ════ STICKER ════ */}
-      {showSticker&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,zIndex:100}} onClick={()=>setShowSticker(null)}>
-          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:24,maxWidth:360,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
-            <div style={{border:"3px solid #16a34a",borderRadius:12,padding:20}}>
-              <div style={{fontSize:11,fontWeight:800,color:"#16a34a",letterSpacing:2,marginBottom:4}}>WORLDWIDE ELECTRICAL SERVICES</div>
-              <div style={{fontSize:28,fontWeight:900,color:"#16a34a",margin:"8px 0"}}>{"\u2713"} QC PASS</div>
-              <div style={{height:2,background:"#16a34a",margin:"12px 0",opacity:0.3}}/>
-              <div style={{fontSize:13,color:"#475569",lineHeight:1.8}}>
-                <div><strong>Sticker #:</strong> {showSticker.sticker_number}</div>
-                <div><strong>Equipment:</strong> {showSticker.equipment_type}</div>
-                <div><strong>S/N:</strong> {showSticker.serial_number}</div>
-                <div><strong>Manufacturer:</strong> {showSticker.manufacturer||"N/A"}</div>
-                <div><strong>Voltage / Amps:</strong> {showSticker.voltage_rating||"?"} / {showSticker.amperage_rating||"?"}</div>
-                <div style={{height:1,background:"#e5e7eb",margin:"8px 0"}}/>
-                <div><strong>Inspected by:</strong> {showSticker.sticker_signed_by}</div>
-                <div><strong>Date:</strong> {showSticker.sticker_date}</div>
+            {deficiencies.length > 0 && <div style={{ fontSize: 11, color: "#dc2626", marginBottom: 8, fontWeight: 600 }}>{deficiencies.length} deficiencies</div>}
+            {(stickerNum || orderNum || invoiceNum) && (
+              <div style={{ fontSize: 11, color: "#475569", marginBottom: 8 }}>
+                {stickerNum ? `Sticker: ${stickerNum}` : ""}
+                {stickerNum && orderNum ? " | " : ""}{orderNum ? `Order: ${orderNum}` : ""}
+                {(stickerNum || orderNum) && invoiceNum ? " | " : ""}{invoiceNum ? `Invoice: ${invoiceNum}` : ""}
               </div>
+            )}
+            <div style={{ display: "flex", gap: 6 }}>
+              <button disabled={saving} onClick={() => saveInspection("pass")} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>✓ PASS</button>
+              <button disabled={saving} onClick={() => saveInspection("conditional")} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", background: "#f59e0b", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>⚠ COND</button>
+              <button disabled={saving} onClick={() => saveInspection("fail")} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>✗ FAIL</button>
             </div>
-            <button onClick={()=>setShowSticker(null)} style={{width:"100%",padding:14,borderRadius:10,border:"none",background:"#0f172a",color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer",marginTop:16}}>Done</button>
+            <button onClick={() => { setTab("inventory"); if (activeItem) changeStatus(activeItem.id, "received"); }} style={{ width: "100%", marginTop: 8, padding: "10px 0", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#64748b", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Cancel</button>
           </div>
         </div>
       )}
 
-      {/* ════ HISTORY ════ */}
-      {view==="history"&&(
+      {/* ── HISTORY TAB ── */}
+      {tab === "history" && (
         <div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
-            {["all","pass","fail","conditional","pending"].map(f=>{
-              const n=f==="all"?insp.length:insp.filter(r=>r.overall_result===f).length;
-              if(f!=="all"&&n===0)return null;
-              return <button key={f} onClick={()=>setFilt(f)} style={{padding:"8px 14px",borderRadius:20,border:"none",background:filt===f?"#0f172a":"#e2e8f0",color:filt===f?"#fff":"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",textTransform:"capitalize"}}>{f} ({n})</button>;
-            })}
-          </div>
-          <div style={{display:"flex",gap:6,marginBottom:14}}>
-            <button onClick={exportCSV} style={{flex:1,padding:10,borderRadius:8,border:"1px solid #16a34a",background:"#fff",color:"#16a34a",fontWeight:700,fontSize:13,cursor:"pointer"}}>Export CSV</button>
-            <button onClick={loadInsp} style={{flex:1,padding:10,borderRadius:8,border:"1px solid #d1d5db",background:"#fff",color:"#475569",fontWeight:700,fontSize:13,cursor:"pointer"}}>{ld?"...":"Refresh"}</button>
-          </div>
-
-          {filtI.length===0?<div style={{textAlign:"center",padding:48,color:"#9ca3af"}}>No inspections</div>:
-          filtI.map(i=>{
-            const isE=expId===i.id; const co=rc[i.overall_result]||"#6b7280"; const ic=i.checks||i.qc_checklist_items||[];
+          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>Inspection History</div>
+          {histLoading && <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Loading...</div>}
+          {!histLoading && history.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>No inspections yet.</div>}
+          {history.map((h) => {
+            const c = h.overall_result === "pass" ? "#16a34a" : h.overall_result === "fail" ? "#dc2626" : "#f59e0b";
+            const expanded = expandedHist === h.id;
             return (
-              <div key={i.id} style={{...card,borderLeft:`4px solid ${co}`,padding:14}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                  <div style={{fontWeight:800,fontSize:14}}>{i.id}</div>
-                  <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,background:co+"18",color:co,textTransform:"uppercase"}}>{i.overall_result}</span>
-                </div>
-                <div style={{fontSize:12,color:"#6b7280"}}>{i.inspected_by} | {i.inspection_date}</div>
-                <div style={{fontSize:13,fontWeight:600,marginTop:4}}>{i.equipment_type} | S/N: {i.serial_number}</div>
-                {i.manufacturer&&<div style={{fontSize:12,color:"#475569"}}>{i.manufacturer}{i.voltage_rating?` | ${i.voltage_rating}`:""}{i.amperage_rating?` / ${i.amperage_rating}`:""}</div>}
-                {i.sticker_number&&<div style={{fontSize:12,color:"#16a34a",fontWeight:700,marginTop:4}}>{"\u2713"} Sticker: {i.sticker_number}</div>}
-
-                <div style={{display:"flex",gap:6,marginTop:10}}>
-                  <button onClick={()=>setExpId(isE?null:i.id)} style={{flex:1,padding:10,borderRadius:8,border:"1px solid #d1d5db",background:isE?"#f1f5f9":"#fff",color:"#475569",fontWeight:600,fontSize:12,cursor:"pointer"}}>{isE?"Hide":"Details"}</button>
-                  {i.overall_result==="pass"&&!i.sticker_number&&<button onClick={()=>issueSticker(i)} style={{flex:1,padding:10,borderRadius:8,border:"none",background:"#16a34a",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>Issue Sticker</button>}
-                  {i.overall_result!=="pass"&&<button onClick={()=>patch(i.id,{overall_result:"pass"})} style={{flex:1,padding:10,borderRadius:8,border:"none",background:"#f59e0b",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>Override Pass</button>}
-                </div>
-
-                {isE&&(
-                  <div style={{marginTop:12,borderRadius:10,overflow:"hidden",border:"1px solid #e5e7eb"}}>
-                    {ic.map((ck,j)=>{
-                      const prev=j>0?ic[j-1]:null; const sh=!prev||prev.section!==ck.section;
-                      const ro=RO.find(r=>r.v===ck.result);
-                      return (
-                        <div key={j}>
-                          {sh&&<div style={{padding:"8px 12px",background:"#f1f5f9",fontSize:12,fontWeight:800,color:"#475569"}}>{ck.section}</div>}
-                          <div style={{padding:"8px 12px",borderBottom:"1px solid #f8fafc",display:"flex",justifyContent:"space-between",fontSize:12,background:ck.result==="fail"?"#fef2f2":ck.result==="flag"?"#fffbeb":"#fff"}}>
-                            <span style={{flex:1,paddingRight:8}}>{ck.check_item||ck.checkItem}</span>
-                            <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
-                              {ck.notes&&<span style={{color:"#94a3b8",fontSize:10,maxWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ck.notes}</span>}
-                              <span style={{fontWeight:800,color:ro?.c||"#94a3b8",fontSize:16}}>{ro?.i||"\u2014"}</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+              <div key={h.id} style={{ ...card, borderLeft: `4px solid ${c}`, padding: 14, cursor: "pointer" }} onClick={() => setExpandedHist(expanded ? null : h.id)}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800 }}>{h.equipment_type} {h.manufacturer || ""}</div>
+                    <div style={{ fontSize: 11, color: "#64748b" }}>
+                      {h.serial_number ? `S/N: ${h.serial_number}` : ""} {h.amperage_rating ? `${h.amperage_rating}A` : ""}
+                    </div>
                   </div>
+                  <span style={{ padding: "4px 12px", borderRadius: 8, background: c + "18", color: c, fontWeight: 800, fontSize: 12 }}>
+                    {(h.overall_result || "").toUpperCase()}
+                  </span>
+                </div>
+                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>
+                  {h.inspection_date} | {h.inspected_by} | {h.inspection_type}
+                  {h.sticker_number ? ` | Sticker: ${h.sticker_number}` : ""}
+                  {h.invoice_number ? ` | Inv: ${h.invoice_number}` : ""}
+                  {h.qb_sync_status && h.qb_sync_status !== "pending" ? ` | QB: ${h.qb_sync_status}` : ""}
+                </div>
+                {h.notes && expanded && (
+                  <div style={{ fontSize: 11, color: "#475569", marginTop: 6, padding: 8, background: "#f8fafc", borderRadius: 6 }}>{h.notes}</div>
                 )}
               </div>
             );
           })}
+          <div style={{ textAlign: "center", padding: 12 }}>
+            <button onClick={loadHistory} style={{ padding: "10px 24px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#475569", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Refresh</button>
+          </div>
         </div>
       )}
     </div>
   );
 }
+
+export default QCApp;
