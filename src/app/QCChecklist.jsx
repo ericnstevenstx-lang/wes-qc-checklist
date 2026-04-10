@@ -1,6 +1,42 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 
+/* ── Logo Components ───────────────────────────────────── */
+const LogoMark = ({ size = 32, color = "#58815a" }) => (
+  <svg width={size} height={size * 0.9} viewBox="0 0 212 191" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M113.977 155.659C106.789 156.563 99.7953 156.218 93.1887 154.777C92.0481 154.518 91.4671 153.227 92.0266 152.194L98.0737 141.134C98.418 140.489 99.1497 140.144 99.8814 140.23C101.904 140.51 103.992 140.661 106.101 140.661C131.236 140.661 151.702 120.197 151.702 95.0634C151.702 89.813 150.798 84.7562 149.162 80.0652L124.5 125.34C124.199 125.899 123.618 126.222 122.994 126.222H109.243C107.951 126.222 107.134 124.845 107.736 123.704L116.28 108.039C116.602 107.436 116.172 106.726 115.483 106.726H90.1328C89.724 106.726 89.3581 106.942 89.1645 107.307L77.2209 129.234L70.313 141.801C69.7534 142.834 68.3762 143.135 67.4508 142.382C52.4083 130.052 43.3054 110.664 45.2637 89.2965C47.9752 59.9887 71.8839 36.4692 101.237 34.1883C109.587 33.5427 117.614 34.5756 125.038 37.0071C126.286 37.416 126.824 38.8792 126.2 40.0412L120.67 50.1118C120.196 50.994 119.185 51.3814 118.216 51.1231C111.61 49.2941 104.422 48.9068 96.9762 50.3915C78.0601 54.1572 63.3835 69.8871 60.8872 89.0168C59.553 99.2595 61.6619 108.964 66.2026 117.141L93.3824 67.2403C93.5976 66.8315 94.0495 66.5732 94.5014 66.5732H109.221C110.189 66.5732 110.814 67.6061 110.34 68.4669L98.8269 89.6193C98.418 90.3509 98.956 91.2332 99.7953 91.2332H124.931C125.253 91.2332 125.555 91.061 125.727 90.7598L139.995 64.5721L139.952 64.529L146.903 51.7687C147.29 51.0586 148.258 50.9079 148.839 51.4674C161.386 63.7544 168.681 81.3993 166.959 100.658C164.441 128.933 142.19 152.108 114.02 155.659H113.977Z" fill={color}/>
+  </svg>
+);
+
+const SplashScreen = ({ onDone }) => {
+  const [opacity, setOpacity] = useState(0);
+  useEffect(() => {
+    requestAnimationFrame(() => setOpacity(1));
+    const fade = setTimeout(() => setOpacity(0), 2200);
+    const done = setTimeout(onDone, 2800);
+    return () => { clearTimeout(fade); clearTimeout(done); };
+  }, [onDone]);
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "#fff",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      opacity, transition: "opacity 0.6s ease",
+    }}>
+      <LogoMark size={120} />
+      <div style={{ marginTop: 20, fontSize: 32, fontWeight: 800, letterSpacing: 6, color: "#565756", fontFamily: "-apple-system,system-ui,sans-serif" }}>
+        HARDIN
+      </div>
+      <div style={{ marginTop: 6, fontSize: 11, fontWeight: 600, letterSpacing: 4, color: "#58815a" }}>
+        POWER GROUP
+      </div>
+      <div style={{ marginTop: 32, fontSize: 11, color: "#94a3b8", fontWeight: 600, letterSpacing: 2 }}>
+        QUALITY CONTROL
+      </div>
+    </div>
+  );
+};
+
 /* ── Supabase ──────────────────────────────────────────── */
 const SB_URL = "https://ulyycjtrshpsjpvbztkr.supabase.co";
 const SB_KEY =
@@ -161,7 +197,7 @@ const SECTIONS = [
     items: [
       "Cleaned inside and out",
       "Touch-up paint applied",
-      "WES inventory label applied",
+      "Hardin inventory label applied",
       "Serial number tag verified",
       "Photos taken and filed",
       "Shipping prep (if outgoing)",
@@ -245,6 +281,7 @@ function compressImage(file, maxDim = 1200, quality = 0.7) {
 
 /* ── Main App ──────────────────────────────────────────── */
 function QCApp() {
+  const [showSplash, setShowSplash] = useState(true);
   const [tab, setTab] = useState("inventory");
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -532,11 +569,16 @@ function QCApp() {
   return (
     <div style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "-apple-system,system-ui,sans-serif", background: "#f1f5f9", minHeight: "100vh" }}>
 
+      {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
+
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, padding: "12px 0", borderBottom: "3px solid #0f172a" }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800 }}>WES QC</div>
-          <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>QUALITY CONTROL</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, padding: "12px 0", borderBottom: "3px solid #58815a" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <LogoMark size={28} />
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#565756", letterSpacing: 2 }}>HARDIN</div>
+            <div style={{ fontSize: 9, color: "#58815a", fontWeight: 700, letterSpacing: 1.5 }}>QUALITY CONTROL</div>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 4 }}>
           {[
@@ -545,7 +587,7 @@ function QCApp() {
             { k: "history", l: "📋" },
           ].map((b) => (
             <button key={b.k} onClick={() => { setTab(b.k); if (b.k === "history") loadHistory(); if (b.k === "inventory") loadItems(); }}
-              style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: tab === b.k ? "#0f172a" : "#e2e8f0", color: tab === b.k ? "#fff" : "#64748b", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+              style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: tab === b.k ? "#3d5e3f" : "#e2e8f0", color: tab === b.k ? "#fff" : "#64748b", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
               {b.l}
             </button>
           ))}
@@ -595,12 +637,27 @@ function QCApp() {
               <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Job Site</label><input style={inputSm} value={equip.jobSite} onChange={(e) => setE("jobSite", e.target.value)} placeholder="Origin" /></div>
               <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Customer</label><input style={inputSm} value={equip.customerName} onChange={(e) => setE("customerName", e.target.value)} /></div>
             </div>
+            {/* Date, Invoice, Order */}
+            <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: "#f0f9ff", border: "1px solid #bae6fd" }}>
+              <label style={{ fontSize: 10, fontWeight: 700, color: "#0369a1" }}>Inspection Date</label>
+              <input style={{ ...inputSm, border: "1.5px solid #7dd3fc", fontWeight: 700, fontSize: 16 }} type="date" value={meta.inspectionDate} onChange={(e) => setMeta((p) => ({ ...p, inspectionDate: e.target.value }))} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+              <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Invoice #</label><input style={inputSm} value={invoiceNum} onChange={(e) => setInvoiceNum(e.target.value)} placeholder="INV-001" /></div>
+              <div><label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Order / PO #</label><input style={inputSm} value={orderNum} onChange={(e) => setOrderNum(e.target.value)} placeholder="PO-001" /></div>
+            </div>
             <button onClick={() => {
               if (!equip.equipmentType) { setToast({ t: "error", m: "Equipment type required" }); return; }
               setActiveItem(null);
+              const keepInv = invoiceNum;
+              const keepOrd = orderNum;
+              const keepDate = meta.inspectionDate;
               resetInspection(equip.manufacturer, equip.equipmentType);
+              setInvoiceNum(keepInv);
+              setOrderNum(keepOrd);
+              setMeta((p) => ({ ...p, inspectionDate: keepDate }));
               setTab("inspect");
-            }} style={{ width: "100%", padding: 14, borderRadius: 10, border: "none", background: "#0f172a", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+            }} style={{ width: "100%", padding: 14, borderRadius: 10, border: "none", background: "#3d5e3f", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
               Start Inspection
             </button>
           </div>
@@ -615,9 +672,9 @@ function QCApp() {
             {[{ v: "", l: "All" }, { v: "received", l: "Received" }, { v: "in_qc", l: "In QC" }, { v: "qc_pass", l: "Passed" }, { v: "qc_fail", l: "Failed" }, { v: "ready", l: "Ready" }, { v: "staged_for_ship", l: "Staged" }, { v: "refurb", l: "Refurb" }].map((f) => (
               <button key={f.v} onClick={() => setStatusFilter(f.v)} style={{
                 padding: "6px 10px", borderRadius: 8,
-                border: `1.5px solid ${statusFilter === f.v ? SC[f.v] || "#0f172a" : "#e2e8f0"}`,
-                background: statusFilter === f.v ? (SC[f.v] || "#0f172a") + "15" : "#fff",
-                color: statusFilter === f.v ? SC[f.v] || "#0f172a" : "#94a3b8",
+                border: `1.5px solid ${statusFilter === f.v ? SC[f.v] || "#3d5e3f" : "#e2e8f0"}`,
+                background: statusFilter === f.v ? (SC[f.v] || "#3d5e3f") + "15" : "#fff",
+                color: statusFilter === f.v ? SC[f.v] || "#3d5e3f" : "#94a3b8",
                 fontWeight: 700, fontSize: 10, cursor: "pointer", whiteSpace: "nowrap",
               }}>{f.l}</button>
             ))}
@@ -662,7 +719,7 @@ function QCApp() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {(item.status === "received" || item.status === "in_qc") && (
-                      <button onClick={() => startQCFromItem(item)} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#0f172a", color: "#fff", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>Start QC</button>
+                      <button onClick={() => startQCFromItem(item)} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#3d5e3f", color: "#fff", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>Start QC</button>
                     )}
                     {item.status === "qc_pass" && <button onClick={() => changeStatus(item.id, "ready")} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #16a34a", background: "#fff", color: "#16a34a", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>→ Ready</button>}
                     {item.status === "ready" && <button onClick={() => changeStatus(item.id, "staged_for_ship")} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #0891b2", background: "#fff", color: "#0891b2", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>→ Stage</button>}
@@ -691,7 +748,7 @@ function QCApp() {
       {tab === "inspect" && (
         <div>
           {/* Equipment header */}
-          <div style={{ ...card, background: "#0f172a", color: "#fff" }}>
+          <div style={{ ...card, background: "#3d5e3f", color: "#fff" }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800 }}>{equip.equipmentType}</div>
@@ -714,7 +771,7 @@ function QCApp() {
           </div>
 
           {/* Inspector Info */}
-          <Section title="Inspector Info" defaultOpen={true} color="#0f172a">
+          <Section title="Inspector Info" defaultOpen={true} color="#3d5e3f">
             {/* Date prominent */}
             <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: "#f0f9ff", border: "1px solid #bae6fd" }}>
               <label style={{ fontSize: 10, fontWeight: 700, color: "#0369a1" }}>Inspection Date</label>
@@ -731,8 +788,8 @@ function QCApp() {
                   {INSP_TYPES.map((t) => (
                     <button key={t.v} onClick={() => setMeta((p) => ({ ...p, inspectionType: t.v }))} style={{
                       flex: 1, padding: "8px 0", borderRadius: 6,
-                      border: `2px solid ${meta.inspectionType === t.v ? "#0f172a" : "#e2e8f0"}`,
-                      background: meta.inspectionType === t.v ? "#0f172a" : "#fff",
+                      border: `2px solid ${meta.inspectionType === t.v ? "#3d5e3f" : "#e2e8f0"}`,
+                      background: meta.inspectionType === t.v ? "#3d5e3f" : "#fff",
                       color: meta.inspectionType === t.v ? "#fff" : "#94a3b8",
                       fontWeight: 700, fontSize: 9, cursor: "pointer",
                     }}>{t.l}</button>

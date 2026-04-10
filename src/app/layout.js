@@ -1,6 +1,6 @@
 export const metadata = {
-  title: "WES QC",
-  description: "Quality Control - Worldwide Electrical Services",
+  title: "Hardin QC",
+  description: "Quality Control - Hardin Power Group",
 };
 
 export default function RootLayout({ children }) {
