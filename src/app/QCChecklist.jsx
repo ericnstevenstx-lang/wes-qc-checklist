@@ -279,6 +279,153 @@ function compressImage(file, maxDim = 1200, quality = 0.7) {
   });
 }
 
+/* ── PWA install hook ──────────────────────────────────── */
+function useInstallPrompt() {
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.navigator.standalone === true;
+    setIsStandalone(standalone);
+
+    const ua = window.navigator.userAgent.toLowerCase();
+    setIsIOS(/iphone|ipad|ipod/.test(ua) && !window.MSStream);
+
+    const handler = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    const installed = () => setDeferredPrompt(null);
+    window.addEventListener("beforeinstallprompt", handler);
+    window.addEventListener("appinstalled", installed);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+      window.removeEventListener("appinstalled", installed);
+    };
+  }, []);
+
+  const promptInstall = async () => {
+    if (!deferredPrompt) return null;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    setDeferredPrompt(null);
+    return outcome;
+  };
+
+  return { deferredPrompt, isStandalone, isIOS, promptInstall };
+}
+
+function InstallModal({ onClose, isIOS, deferredPrompt, promptInstall }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 10000,
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 14, padding: 20, maxWidth: 420, width: "100%", boxShadow: "0 10px 40px rgba(0,0,0,0.3)" }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <LogoMark size={24} />
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#565756" }}>Install Hardin QC</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#94a3b8", lineHeight: 1 }}>×</button>
+        </div>
+
+        {isIOS && (
+          <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
+            <div style={{ fontWeight: 700, marginBottom: 8, color: "#1e293b" }}>iPhone / iPad (Safari)</div>
+            <ol style={{ paddingLeft: 18, margin: 0 }}>
+              <li>Open this page in <b>Safari</b> (not Chrome).</li>
+              <li>Tap the <b>Share</b> icon (square with arrow up) in the bottom toolbar.</li>
+              <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
+              <li>Tap <b>Add</b> in the top right.</li>
+            </ol>
+            <div style={{ marginTop: 12, padding: 10, background: "#f1f5f9", borderRadius: 8, fontSize: 11, color: "#64748b" }}>
+              The icon will appear on your home screen and behave like a native app.
+            </div>
+          </div>
+        )}
+
+        {!isIOS && deferredPrompt && (
+          <div>
+            <div style={{ fontSize: 13, color: "#475569", marginBottom: 14, lineHeight: 1.5 }}>
+              Install the QC app on this device for faster access, full-screen mode, and a home-screen icon.
+            </div>
+            <button
+              onClick={async () => { await promptInstall(); onClose(); }}
+              style={{ width: "100%", padding: 14, borderRadius: 10, border: "none", background: "#3d5e3f", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
+            >
+              📲 Install Now
+            </button>
+          </div>
+        )}
+
+        {!isIOS && !deferredPrompt && (
+          <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
+            <div style={{ fontWeight: 700, marginBottom: 8, color: "#1e293b" }}>Android (Chrome)</div>
+            <ol style={{ paddingLeft: 18, margin: 0 }}>
+              <li>Tap the <b>menu</b> (three dots, top right) in Chrome.</li>
+              <li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li>
+              <li>Tap <b>Install</b> to confirm.</li>
+            </ol>
+            <div style={{ marginTop: 14, fontWeight: 700, marginBottom: 8, color: "#1e293b" }}>Desktop (Chrome / Edge)</div>
+            <ol style={{ paddingLeft: 18, margin: 0 }}>
+              <li>Click the <b>install icon</b> (⊕ or computer-with-arrow) in the address bar.</li>
+              <li>Click <b>Install</b>.</li>
+            </ol>
+            <div style={{ marginTop: 12, padding: 10, background: "#fef3c7", borderRadius: 8, fontSize: 11, color: "#92400e" }}>
+              If the install option does not appear, refresh the page once and try again. Some browsers require a few seconds before the install prompt is available.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Draft persistence (localStorage) ──────────────────── */
+const DRAFT_PREFIX = "hardin_qc_draft:";
+const draftKey = (itemId) => `${DRAFT_PREFIX}${itemId || "manual"}`;
+const saveDraft = (itemId, data) => {
+  try {
+    localStorage.setItem(draftKey(itemId), JSON.stringify({ ...data, savedAt: Date.now() }));
+  } catch (e) {}
+};
+const loadDraft = (itemId) => {
+  try {
+    const raw = localStorage.getItem(draftKey(itemId));
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+};
+const clearDraft = (itemId) => {
+  try { localStorage.removeItem(draftKey(itemId)); } catch (e) {}
+};
+const listDrafts = () => {
+  const out = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(DRAFT_PREFIX)) {
+        const id = k.slice(DRAFT_PREFIX.length);
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          try { out[id] = JSON.parse(raw); } catch (e) {}
+        }
+      }
+    }
+  } catch (e) {}
+  return out;
+};
+
 /* ── Main App ──────────────────────────────────────────── */
 function QCApp() {
   const [showSplash, setShowSplash] = useState(true);
@@ -289,6 +436,20 @@ function QCApp() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+
+  /* ── Install prompt ── */
+  const { deferredPrompt, isStandalone, isIOS, promptInstall } = useInstallPrompt();
+  const [showInstall, setShowInstall] = useState(false);
+  const [installDismissed, setInstallDismissed] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("hardin_install_dismissed") === "1") setInstallDismissed(true);
+    } catch (e) {}
+  }, []);
+
+  /* ── Drafts ── */
+  const [drafts, setDrafts] = useState({});
+  useEffect(() => { setDrafts(listDrafts()); }, []);
 
   /* ── Inventory load ── */
   const loadItems = useCallback(async () => {
@@ -350,6 +511,60 @@ function QCApp() {
     setHistLoading(false);
   }, []);
 
+  /* ── Draft autosave (debounced) ── */
+  useEffect(() => {
+    if (tab !== "inspect") return;
+    const id = activeItem?.id || "manual";
+    // Only save if something has actually been entered to avoid empty drafts
+    const hasContent =
+      meta.inspectedBy ||
+      checks.some((c) => c.result !== "not_checked") ||
+      deficiencies.length > 0 ||
+      photos.length > 0 ||
+      Object.entries(megger).some(([k, v]) => v && k !== "testV") ||
+      torques.some((t) => t.actual) ||
+      meta.notes ||
+      stickerNum ||
+      orderNum ||
+      invoiceNum ||
+      (!activeItem && (equip.equipmentType || equip.serialNumber));
+    if (!hasContent) return;
+    const t = setTimeout(() => {
+      saveDraft(activeItem?.id, {
+        activeItemId: activeItem?.id || null,
+        equip, meta, checks, megger, torques, deficiencies, photos,
+        stickerNum, orderNum, invoiceNum,
+      });
+      setDrafts((p) => ({ ...p, [id]: { savedAt: Date.now() } }));
+    }, 800);
+    return () => clearTimeout(t);
+  }, [tab, activeItem, equip, meta, checks, megger, torques, deficiencies, photos, stickerNum, orderNum, invoiceNum]);
+
+  /* ── Resume manual draft ── */
+  const resumeManualDraft = () => {
+    const draft = loadDraft(null);
+    if (!draft) return;
+    setActiveItem(null);
+    setEquip(draft.equip || {});
+    setMeta(draft.meta || { inspectedBy: "", inspectionDate: today(), inspectionType: "incoming", notes: "" });
+    setChecks(draft.checks && draft.checks.length ? draft.checks : initChecks());
+    setMegger(draft.megger || { aToB: "", bToC: "", cToA: "", aToG: "", bToG: "", cToG: "", testV: "1000" });
+    setTorques(draft.torques || []);
+    setDeficiencies(draft.deficiencies || []);
+    setPhotos(draft.photos || []);
+    setStickerNum(draft.stickerNum || "");
+    setOrderNum(draft.orderNum || "");
+    setInvoiceNum(draft.invoiceNum || "");
+    setToast({ t: "success", m: "Resumed manual draft" });
+    setTab("inspect");
+  };
+
+  const discardManualDraft = () => {
+    clearDraft(null);
+    setDrafts((p) => { const n = { ...p }; delete n.manual; return n; });
+    setToast({ t: "success", m: "Manual draft discarded" });
+  };
+
   /* ── Checklist init ── */
   const initChecks = () =>
     SECTIONS.flatMap((sec, si) =>
@@ -387,21 +602,50 @@ function QCApp() {
   /* ── Start QC from inventory item ── */
   const startQCFromItem = async (item) => {
     setActiveItem(item);
-    setEquip({
-      equipmentType: item.equipment_type || "", manufacturer: item.manufacturer || "",
-      modelNumber: item.model_number || "", serialNumber: item.serial_number || "",
-      voltageRating: item.voltage_rating || "", amperageRating: item.amperage_rating || "",
-      kvaRating: item.kva_rating || "", catalogNumber: item.catalog_number || "",
-      jobSite: item.source_job_site || "", customerName: item.customer_origin || "",
-      sourceLocation: item.location || "",
-    });
-    resetInspection(item.manufacturer, item.equipment_type);
-    try {
-      await sb(`inventory_items?id=eq.${item.id}`, {
-        method: "PATCH", body: JSON.stringify({ status: "in_qc" }),
+    const draft = loadDraft(item.id);
+    if (draft) {
+      // Restore previous in-progress inspection
+      setEquip(draft.equip || {
+        equipmentType: item.equipment_type || "", manufacturer: item.manufacturer || "",
+        modelNumber: item.model_number || "", serialNumber: item.serial_number || "",
+        voltageRating: item.voltage_rating || "", amperageRating: item.amperage_rating || "",
+        kvaRating: item.kva_rating || "", catalogNumber: item.catalog_number || "",
+        jobSite: item.source_job_site || "", customerName: item.customer_origin || "",
+        sourceLocation: item.location || "",
       });
-      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: "in_qc" } : i)));
-    } catch (e) {}
+      setMeta(draft.meta || { inspectedBy: "", inspectionDate: today(), inspectionType: "incoming", notes: "" });
+      setChecks(draft.checks && draft.checks.length ? draft.checks : initChecks());
+      setMegger(draft.megger || { aToB: "", bToC: "", cToA: "", aToG: "", bToG: "", cToG: "", testV: "1000" });
+      setTorques(draft.torques || []);
+      setDeficiencies(draft.deficiencies || []);
+      setPhotos(draft.photos || []);
+      setStickerNum(draft.stickerNum || "");
+      setOrderNum(draft.orderNum || "");
+      setInvoiceNum(draft.invoiceNum || "");
+      // Reload torque specs in background if draft has none
+      if (!draft.torques || draft.torques.length === 0) {
+        loadTorqueSpecs(item.manufacturer, item.equipment_type);
+      }
+      setToast({ t: "success", m: "Resumed in-progress inspection" });
+    } else {
+      setEquip({
+        equipmentType: item.equipment_type || "", manufacturer: item.manufacturer || "",
+        modelNumber: item.model_number || "", serialNumber: item.serial_number || "",
+        voltageRating: item.voltage_rating || "", amperageRating: item.amperage_rating || "",
+        kvaRating: item.kva_rating || "", catalogNumber: item.catalog_number || "",
+        jobSite: item.source_job_site || "", customerName: item.customer_origin || "",
+        sourceLocation: item.location || "",
+      });
+      resetInspection(item.manufacturer, item.equipment_type);
+    }
+    if (item.status !== "in_qc") {
+      try {
+        await sb(`inventory_items?id=eq.${item.id}`, {
+          method: "PATCH", body: JSON.stringify({ status: "in_qc" }),
+        });
+        setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: "in_qc" } : i)));
+      } catch (e) {}
+    }
     setTab("inspect");
   };
 
@@ -530,6 +774,10 @@ function QCApp() {
       }
 
       setToast({ t: "success", m: `QC ${result.toUpperCase()} saved - ${inspId}` });
+      // Clear draft now that it is saved to DB
+      const draftId = activeItem?.id || "manual";
+      clearDraft(activeItem?.id);
+      setDrafts((p) => { const n = { ...p }; delete n[draftId]; return n; });
       setTab("inventory");
       loadItems();
     } catch (e) {
@@ -581,6 +829,9 @@ function QCApp() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 4 }}>
+          {!isStandalone && (
+            <button onClick={() => setShowInstall(true)} title="Install app" style={{ padding: "8px 10px", borderRadius: 8, border: "none", background: "#fffbeb", color: "#92400e", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>📲</button>
+          )}
           {[
             { k: "inventory", l: "📦" },
             { k: "form", l: "+" },
@@ -602,10 +853,53 @@ function QCApp() {
         </div>
       )}
 
+      {/* Install banner */}
+      {!isStandalone && !installDismissed && tab === "inventory" && (
+        <div style={{ background: "linear-gradient(135deg, #3d5e3f 0%, #58815a 100%)", color: "#fff", borderRadius: 12, padding: 12, marginBottom: 12, boxShadow: "0 2px 6px rgba(0,0,0,0.1)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 2 }}>📲 Install on this device</div>
+              <div style={{ fontSize: 11, opacity: 0.9 }}>
+                {isIOS ? "iPhone / iPad: tap for setup steps" : "Add to home screen for one-tap access"}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={() => setShowInstall(true)} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#fff", color: "#3d5e3f", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>Install</button>
+              <button onClick={() => {
+                setInstallDismissed(true);
+                try { localStorage.setItem("hardin_install_dismissed", "1"); } catch (e) {}
+              }} style={{ padding: "8px 10px", background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", fontSize: 16, cursor: "pointer", borderRadius: 8 }}>×</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Install modal */}
+      {showInstall && (
+        <InstallModal
+          onClose={() => setShowInstall(false)}
+          isIOS={isIOS}
+          deferredPrompt={deferredPrompt}
+          promptInstall={promptInstall}
+        />
+      )}
+
       {/* ── MANUAL ENTRY TAB ── */}
       {tab === "form" && (
         <div>
           <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>New QC Inspection (Manual Entry)</div>
+          {drafts.manual && (
+            <div style={{ ...card, background: "#fffbeb", border: "1.5px solid #fde68a", padding: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#92400e", marginBottom: 4 }}>↻ Manual draft in progress</div>
+              <div style={{ fontSize: 10, color: "#92400e", marginBottom: 8 }}>
+                Last saved: {new Date(drafts.manual.savedAt).toLocaleString()}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={resumeManualDraft} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#f59e0b", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Resume Draft</button>
+                <button onClick={discardManualDraft} style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#64748b", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Discard</button>
+              </div>
+            </div>
+          )}
           <div style={card}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
               <div>
@@ -667,6 +961,17 @@ function QCApp() {
       {/* ── INVENTORY TAB ── */}
       {tab === "inventory" && (
         <div>
+          {/* In-progress drafts banner */}
+          {Object.keys(drafts).filter((k) => k !== "manual").length > 0 && (
+            <div style={{ ...card, background: "#fffbeb", border: "1.5px solid #fde68a", padding: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#92400e", marginBottom: 6 }}>
+                ↻ {Object.keys(drafts).filter((k) => k !== "manual").length} in-progress inspection(s)
+              </div>
+              <div style={{ fontSize: 10, color: "#92400e" }}>
+                Look for the orange <b>Resume</b> button on items below to continue.
+              </div>
+            </div>
+          )}
           <input style={{ ...inputBase, marginBottom: 8 }} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search S/N, model, SKU..." />
           <div style={{ display: "flex", gap: 4, marginBottom: 10, overflowX: "auto", paddingBottom: 4 }}>
             {[{ v: "", l: "All" }, { v: "received", l: "Received" }, { v: "in_qc", l: "In QC" }, { v: "qc_pass", l: "Passed" }, { v: "qc_fail", l: "Failed" }, { v: "ready", l: "Ready" }, { v: "staged_for_ship", l: "Staged" }, { v: "refurb", l: "Refurb" }].map((f) => (
@@ -719,7 +1024,11 @@ function QCApp() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {(item.status === "received" || item.status === "in_qc") && (
-                      <button onClick={() => startQCFromItem(item)} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#3d5e3f", color: "#fff", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>Start QC</button>
+                      drafts[item.id] ? (
+                        <button onClick={() => startQCFromItem(item)} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#f59e0b", color: "#fff", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>↻ Resume</button>
+                      ) : (
+                        <button onClick={() => startQCFromItem(item)} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#3d5e3f", color: "#fff", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>Start QC</button>
+                      )
                     )}
                     {item.status === "qc_pass" && <button onClick={() => changeStatus(item.id, "ready")} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #16a34a", background: "#fff", color: "#16a34a", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>→ Ready</button>}
                     {item.status === "ready" && <button onClick={() => changeStatus(item.id, "staged_for_ship")} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #0891b2", background: "#fff", color: "#0891b2", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>→ Stage</button>}
@@ -977,7 +1286,21 @@ function QCApp() {
               <button disabled={saving} onClick={() => saveInspection("conditional")} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", background: "#f59e0b", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>⚠ COND</button>
               <button disabled={saving} onClick={() => saveInspection("fail")} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>✗ FAIL</button>
             </div>
-            <button onClick={() => { setTab("inventory"); if (activeItem) changeStatus(activeItem.id, "received"); }} style={{ width: "100%", marginTop: 8, padding: "10px 0", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#64748b", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <button onClick={() => {
+                // Save & Exit: keep draft, keep in_qc status, just leave the screen
+                setTab("inventory");
+                setToast({ t: "success", m: "Draft saved. Resume from inventory." });
+              }} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1.5px solid #f59e0b", background: "#fffbeb", color: "#92400e", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>💾 Save & Exit</button>
+              <button onClick={() => {
+                if (!confirm("Discard this inspection? All entered data will be lost.")) return;
+                const draftId = activeItem?.id || "manual";
+                clearDraft(activeItem?.id);
+                setDrafts((p) => { const n = { ...p }; delete n[draftId]; return n; });
+                setTab("inventory");
+                if (activeItem) changeStatus(activeItem.id, "received");
+              }} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#64748b", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Discard</button>
+            </div>
           </div>
         </div>
       )}
