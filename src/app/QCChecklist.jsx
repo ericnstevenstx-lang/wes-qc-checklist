@@ -205,6 +205,418 @@ const SECTIONS = [
   },
 ];
 
+/* ── Equipment-type-specific templates ─────────────────── */
+/* Each template is a focused checklist for one equipment type. */
+/* Operators pick a type at inspection start and only see relevant items. */
+const EQUIPMENT_TEMPLATES = [
+  {
+    key: "subpanel",
+    label: "Subpanel",
+    icon: "🔲",
+    eqType: "Panelboard",
+    sections: [
+      {
+        s: "Termination",
+        items: [
+          "Phase colors verified (A/B/C/N)",
+          "Main phase wires correct size, terminated",
+          "Ground wire correct size and designation",
+          "Feeder wires Ohmed and verified",
+          "Neutral bonding correct (bonded only if 1st means of disc)",
+        ],
+      },
+      {
+        s: "General",
+        items: [
+          "Branch wires numbered, phase colors correct",
+          "K.O. seals installed (NEC 408.7)",
+          "Tap can box correct size",
+          "Finger-safe term blocks in tap can (no Wagos)",
+          "Conduit bushings as required",
+          "Grounded per NEC 250",
+          "Locknuts and bushings tight",
+          "Panel ID label on unit",
+          "Clean inside and out",
+        ],
+      },
+    ],
+  },
+  {
+    key: "transformer",
+    label: "Transformer",
+    icon: "⚡",
+    eqType: "Transformer",
+    sections: [
+      {
+        s: "Termination",
+        items: [
+          "LV phases verified (A-Blk, B-Red, C-Blue)",
+          "HV phases verified (A-Brn, B-Or, C-Yel)",
+          "Mounting bolts/nuts Grade 5, correct size",
+          "Mech lug sizes correct for cable",
+          "Crimped terms installed correctly",
+          "Bolts tight (or sign attached: not torqued)",
+          "System bonding jumper XO to GEC",
+          "EGCs/bonding on multi-barrel lug or bus bar (NEC 450.10, 250.8)",
+        ],
+      },
+      {
+        s: "General",
+        items: [
+          "Shipping braces in place",
+          "K.O. seals installed",
+          "Locknuts tight",
+          "Phase colors verified to H1/H2/H3",
+          "Grounded per NEC 250",
+          "Ground bushings tight (incl. ground lug)",
+          "Labels attached (NEC 110.16)",
+          "Clean inside and out",
+        ],
+      },
+      {
+        s: "Electrical Test",
+        items: [
+          "Megger test performed",
+          "Megger readings acceptable",
+          "Voltage verified vs nameplate",
+        ],
+      },
+    ],
+  },
+  {
+    key: "disconnect",
+    label: "Disconnect",
+    icon: "🔌",
+    eqType: "Disconnect Switch",
+    sections: [
+      {
+        s: "Visual / Physical",
+        items: [
+          "Enclosure no dents, rust, corrosion",
+          "Operating handle smooth, locks in OFF",
+          "Door latches functional",
+          "Nameplate legible",
+          "No moisture or burn marks",
+        ],
+      },
+      {
+        s: "Electrical",
+        items: [
+          "Line/load terminals tight",
+          "Phase colors correct",
+          "Ground lug present and bonded",
+          "Fuse clips clean (if fusible)",
+          "Continuity verified all poles",
+          "Megger phase-to-phase",
+          "Megger phase-to-ground",
+        ],
+      },
+      {
+        s: "Labels & Safety",
+        items: [
+          "Voltage rating label",
+          "Arc flash label (if required)",
+          "Hardin inventory label applied",
+        ],
+      },
+    ],
+  },
+  {
+    key: "charge_station",
+    label: "Charge Station",
+    icon: "🔋",
+    eqType: "Other",
+    sections: [
+      {
+        s: "Visual / Physical",
+        items: [
+          "Enclosure clean, no damage",
+          "Cable/connector intact, no cuts",
+          "Mounting hardware secure",
+          "Display/indicators functional",
+        ],
+      },
+      {
+        s: "Electrical",
+        items: [
+          "Input voltage correct vs nameplate",
+          "Output voltage correct vs spec",
+          "GFCI/RCD test passed",
+          "Ground continuity verified",
+        ],
+      },
+      {
+        s: "Final",
+        items: [
+          "Hardin inventory label applied",
+          "Cable wrapped/stowed properly",
+        ],
+      },
+    ],
+  },
+  {
+    key: "spider_rack",
+    label: "Spider Rack",
+    icon: "🕸️",
+    eqType: "Other",
+    sections: [
+      {
+        s: "Structural",
+        items: [
+          "Frame welds intact, no cracks",
+          "Casters/feet functional",
+          "Cable guides not damaged",
+          "Lift points / forklift pockets clear",
+        ],
+      },
+      {
+        s: "Electrical",
+        items: [
+          "All outlets / receptacles tested",
+          "GFCI test on each circuit",
+          "Phase rotation correct",
+          "Cable insulation intact (no nicks)",
+          "Strain reliefs tight",
+          "Ground continuity all circuits",
+        ],
+      },
+      {
+        s: "Final",
+        items: [
+          "Voltage/amperage label visible",
+          "Hardin inventory label applied",
+        ],
+      },
+    ],
+  },
+  {
+    key: "temp_skid",
+    label: "Temp Power Skid",
+    icon: "🏗️",
+    eqType: "Other",
+    sections: [
+      {
+        s: "Structural",
+        items: [
+          "Skid frame welds intact",
+          "Forklift pockets clear",
+          "Lifting eyes rated and marked",
+          "Weatherproof seals intact",
+          "Door latches and hinges functional",
+        ],
+      },
+      {
+        s: "Termination",
+        items: [
+          "Main lugs torqued to spec",
+          "Phase colors verified (A/B/C/N)",
+          "Ground bus bonded",
+          "Cam-lock connectors clean (if equipped)",
+          "All branch breakers seated and torqued",
+        ],
+      },
+      {
+        s: "Electrical Test",
+        items: [
+          "Megger phase-to-phase (3 readings)",
+          "Megger phase-to-ground (3 readings)",
+          "Continuity all branch circuits",
+          "GFCI test on each GFCI circuit",
+          "Phase rotation correct",
+          "Voltage at output verified vs nameplate",
+        ],
+      },
+      {
+        s: "Safety & Labels",
+        items: [
+          "Arc flash label current",
+          "Voltage / amperage rating label",
+          "Hardin serial label with QR applied",
+          "Panel schedule typed and installed",
+          "Equipment grounding verified",
+        ],
+      },
+      {
+        s: "Final",
+        items: [
+          "Clean inside and out",
+          "Photos taken (pre-load condition)",
+          "Cables coiled / stowed",
+        ],
+      },
+    ],
+  },
+  {
+    key: "switchgear",
+    label: "Switchgear",
+    icon: "🏭",
+    eqType: "Switchgear",
+    sections: [
+      {
+        s: "Visual / Physical",
+        items: [
+          "Enclosure no dents, rust, corrosion",
+          "Doors, latches, hinges functional",
+          "Gaskets and seals intact",
+          "No water damage or moisture",
+          "No arcing or burn marks",
+          "Interior clean, free of debris",
+          "Nameplates legible",
+        ],
+      },
+      {
+        s: "Bus & Lugs",
+        items: [
+          "Bus bars no pitting or warping",
+          "Bus bar insulation intact",
+          "Phase ID correct (A/B/C)",
+          "Ground bus present and bonded",
+          "Lug crimps secure",
+          "Anti-oxidant on aluminum connections",
+          "Landing pads clean",
+        ],
+      },
+      {
+        s: "Breakers / Switching",
+        items: [
+          "Breakers operate freely",
+          "Trip units functional",
+          "Arc chutes present and clean",
+          "Breaker contacts no pitting",
+          "Stabs/mounting secure",
+          "Racking mechanism smooth",
+          "Interlocks operational",
+        ],
+      },
+      {
+        s: "Electrical Test",
+        items: [
+          "Megger phase-to-phase",
+          "Megger phase-to-ground",
+          "Contact resistance (micro-ohm)",
+          "Continuity all circuits",
+          "Ground fault path verified",
+        ],
+      },
+      {
+        s: "Safety & Final",
+        items: [
+          "Arc flash labels current",
+          "UL/CSA listing verified",
+          "Equipment grounding verified",
+          "Hardin inventory label applied",
+        ],
+      },
+    ],
+  },
+  {
+    key: "mcc",
+    label: "MCC",
+    icon: "🎛️",
+    eqType: "Motor Control Center (MCC)",
+    sections: [
+      {
+        s: "Visual / Physical",
+        items: [
+          "Enclosure intact, no rust",
+          "All bucket doors functional",
+          "Interior clean",
+          "No burn marks or arcing",
+          "Nameplates and bucket labels legible",
+        ],
+      },
+      {
+        s: "Bus & Stabs",
+        items: [
+          "Vertical bus clean, no pitting",
+          "Horizontal bus secure",
+          "Stabs make full contact in each bucket",
+          "Ground bus bonded to each bucket",
+        ],
+      },
+      {
+        s: "Buckets / Starters",
+        items: [
+          "Each bucket racks in/out smoothly",
+          "Contactors operate freely",
+          "Overload relays present and correct size",
+          "Control transformers test OK",
+          "Disconnect handles operate",
+        ],
+      },
+      {
+        s: "Electrical Test",
+        items: [
+          "Megger phase-to-phase",
+          "Megger phase-to-ground",
+          "Continuity each bucket",
+        ],
+      },
+      {
+        s: "Final",
+        items: [
+          "Arc flash labels current",
+          "Bucket schedule documented",
+          "Hardin inventory label applied",
+        ],
+      },
+    ],
+  },
+  {
+    key: "ups",
+    label: "UPS System",
+    icon: "🔋",
+    eqType: "UPS System",
+    sections: [
+      {
+        s: "Visual / Physical",
+        items: [
+          "Enclosure clean, no damage",
+          "Cooling fans functional",
+          "Display/HMI operational",
+          "No alarms or fault codes",
+          "Battery cabinet inspected",
+        ],
+      },
+      {
+        s: "Electrical",
+        items: [
+          "Input breaker operational",
+          "Output breaker operational",
+          "Bypass switch operational",
+          "Battery voltage in spec",
+          "Battery terminals torqued and clean",
+          "Ground continuity verified",
+        ],
+      },
+      {
+        s: "Test",
+        items: [
+          "Self-test passed",
+          "Battery runtime test (if specified)",
+          "Output voltage in spec on battery",
+          "Output voltage in spec on line",
+        ],
+      },
+      {
+        s: "Final",
+        items: [
+          "Date code on batteries recorded",
+          "Hardin inventory label applied",
+          "Manuals included",
+        ],
+      },
+    ],
+  },
+  {
+    key: "custom",
+    label: "Custom / Other",
+    icon: "📋",
+    eqType: "Other",
+    sections: null, // Falls back to full SECTIONS list
+  },
+];
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 /* ── Styles ────────────────────────────────────────────── */
@@ -451,6 +863,10 @@ function QCApp() {
   const [drafts, setDrafts] = useState({});
   useEffect(() => { setDrafts(listDrafts()); }, []);
 
+  /* ── Selected equipment template ── */
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const activeSections = selectedTemplate?.sections || SECTIONS;
+
   /* ── Inventory load ── */
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -532,19 +948,24 @@ function QCApp() {
     const t = setTimeout(() => {
       saveDraft(activeItem?.id, {
         activeItemId: activeItem?.id || null,
+        templateKey: selectedTemplate?.key || null,
         equip, meta, checks, megger, torques, deficiencies, photos,
         stickerNum, orderNum, invoiceNum,
       });
       setDrafts((p) => ({ ...p, [id]: { savedAt: Date.now() } }));
     }, 800);
     return () => clearTimeout(t);
-  }, [tab, activeItem, equip, meta, checks, megger, torques, deficiencies, photos, stickerNum, orderNum, invoiceNum]);
+  }, [tab, activeItem, equip, meta, checks, megger, torques, deficiencies, photos, stickerNum, orderNum, invoiceNum, selectedTemplate]);
 
   /* ── Resume manual draft ── */
   const resumeManualDraft = () => {
     const draft = loadDraft(null);
     if (!draft) return;
     setActiveItem(null);
+    if (draft.templateKey) {
+      const t = EQUIPMENT_TEMPLATES.find((x) => x.key === draft.templateKey);
+      if (t) setSelectedTemplate(t);
+    }
     setEquip(draft.equip || {});
     setMeta(draft.meta || { inspectedBy: "", inspectionDate: today(), inspectionType: "incoming", notes: "" });
     setChecks(draft.checks && draft.checks.length ? draft.checks : initChecks());
@@ -566,10 +987,12 @@ function QCApp() {
   };
 
   /* ── Checklist init ── */
-  const initChecks = () =>
-    SECTIONS.flatMap((sec, si) =>
+  // Accepts optional sections to bypass the React state lag issue
+  // when a template is selected and we need fresh checks immediately.
+  const initChecks = (sections) =>
+    (sections || activeSections).flatMap((sec, si) =>
       sec.items.map((item, ii) => ({
-        section: sec.s, checkItem: item, result: "not_checked", notes: "", sort: si * 100 + ii,
+        section: sec.s, checkItem: item, result: "not_checked", notes: "", photoUrl: "", sort: si * 100 + ii,
       }))
     );
 
@@ -602,8 +1025,20 @@ function QCApp() {
   /* ── Start QC from inventory item ── */
   const startQCFromItem = async (item) => {
     setActiveItem(item);
+    // Auto-pick template based on equipment_type. Falls back to custom for unmatched.
+    const matchedTemplate = EQUIPMENT_TEMPLATES.find((t) =>
+      t.eqType && t.eqType !== "Other" &&
+      (t.eqType === item.equipment_type ||
+       t.label.toLowerCase() === (item.equipment_type || "").toLowerCase())
+    ) || EQUIPMENT_TEMPLATES.find((t) => t.key === "custom");
+    setSelectedTemplate(matchedTemplate);
     const draft = loadDraft(item.id);
     if (draft) {
+      // Restore template from draft if present (overrides auto-pick)
+      if (draft.templateKey) {
+        const dt = EQUIPMENT_TEMPLATES.find((x) => x.key === draft.templateKey);
+        if (dt) setSelectedTemplate(dt);
+      }
       // Restore previous in-progress inspection
       setEquip(draft.equip || {
         equipmentType: item.equipment_type || "", manufacturer: item.manufacturer || "",
@@ -636,7 +1071,7 @@ function QCApp() {
         jobSite: item.source_job_site || "", customerName: item.customer_origin || "",
         sourceLocation: item.location || "",
       });
-      resetInspection(item.manufacturer, item.equipment_type);
+      resetInspection(item.manufacturer, item.equipment_type, matchedTemplate?.sections);
     }
     if (item.status !== "in_qc") {
       try {
@@ -649,8 +1084,8 @@ function QCApp() {
     setTab("inspect");
   };
 
-  const resetInspection = (mfr, eqType) => {
-    setChecks(initChecks());
+  const resetInspection = (mfr, eqType, sections) => {
+    setChecks(initChecks(sections));
     setMegger({ aToB: "", bToC: "", cToA: "", aToG: "", bToG: "", cToG: "", testV: "1000" });
     setDeficiencies([]);
     setPhotos([]);
@@ -690,6 +1125,24 @@ function QCApp() {
       if (res.ok) url = `${SB_URL}/storage/v1/object/public/item-photos/${name}`;
     } catch (e) {}
     setPhotos((p) => [...p, url]);
+  };
+
+  /* ── Per-check photo upload ── */
+  const handleCheckPhoto = async (idx, file) => {
+    if (!file) return;
+    const dataUrl = await compressImage(file);
+    let url = dataUrl;
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      const name = `qc_check_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
+      const res = await fetch(`${SB_URL}/storage/v1/object/item-photos/${name}`, {
+        method: "POST",
+        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "image/jpeg" },
+        body: blob,
+      });
+      if (res.ok) url = `${SB_URL}/storage/v1/object/public/item-photos/${name}`;
+    } catch (e) {}
+    setChecks((prev) => prev.map((c, i) => (i === idx ? { ...c, photoUrl: url } : c)));
   };
 
   /* ── Save inspection ── */
@@ -734,6 +1187,7 @@ function QCApp() {
         .map((c) => ({
           inspection_id: inspId, section: c.section, check_item: c.checkItem,
           result: c.result, notes: c.notes || null, sort_order: c.sort,
+          photo_url: c.photoUrl || null,
         }));
       if (checkRows.length) await sb("qc_checklist_items", { method: "POST", body: JSON.stringify(checkRows) });
 
@@ -778,6 +1232,7 @@ function QCApp() {
       const draftId = activeItem?.id || "manual";
       clearDraft(activeItem?.id);
       setDrafts((p) => { const n = { ...p }; delete n[draftId]; return n; });
+      setSelectedTemplate(null);
       setTab("inventory");
       loadItems();
     } catch (e) {
@@ -837,7 +1292,12 @@ function QCApp() {
             { k: "form", l: "+" },
             { k: "history", l: "📋" },
           ].map((b) => (
-            <button key={b.k} onClick={() => { setTab(b.k); if (b.k === "history") loadHistory(); if (b.k === "inventory") loadItems(); }}
+            <button key={b.k} onClick={() => {
+              setTab(b.k);
+              if (b.k === "history") loadHistory();
+              if (b.k === "inventory") loadItems();
+              if (b.k === "form" && !drafts.manual) setSelectedTemplate(null);
+            }}
               style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: tab === b.k ? "#3d5e3f" : "#e2e8f0", color: tab === b.k ? "#fff" : "#64748b", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
               {b.l}
             </button>
@@ -887,7 +1347,7 @@ function QCApp() {
       {/* ── MANUAL ENTRY TAB ── */}
       {tab === "form" && (
         <div>
-          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>New QC Inspection (Manual Entry)</div>
+          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>New QC Inspection</div>
           {drafts.manual && (
             <div style={{ ...card, background: "#fffbeb", border: "1.5px solid #fde68a", padding: 12 }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: "#92400e", marginBottom: 4 }}>↻ Manual draft in progress</div>
@@ -900,7 +1360,44 @@ function QCApp() {
               </div>
             </div>
           )}
+
+          {/* Template picker - shown until type selected */}
+          {!selectedTemplate && (
+            <div style={card}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#1e293b", marginBottom: 4 }}>What are you inspecting?</div>
+              <div style={{ fontSize: 11, color: "#64748b", marginBottom: 12 }}>Tap an equipment type to load the right checklist.</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                {EQUIPMENT_TEMPLATES.map((t) => (
+                  <button
+                    key={t.key}
+                    onClick={() => {
+                      setSelectedTemplate(t);
+                      if (t.eqType) setE("equipmentType", t.eqType);
+                    }}
+                    style={{
+                      padding: "14px 6px", borderRadius: 10, border: "1.5px solid #e2e8f0",
+                      background: "#fff", cursor: "pointer", display: "flex", flexDirection: "column",
+                      alignItems: "center", gap: 6, fontFamily: "inherit",
+                    }}
+                  >
+                    <div style={{ fontSize: 28 }}>{t.icon}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#1e293b", textAlign: "center", lineHeight: 1.2 }}>{t.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Form - only after template selected */}
+          {selectedTemplate && (
           <div style={card}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: "#3d5e3f", color: "#fff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 20 }}>{selectedTemplate.icon}</span>
+                <span style={{ fontSize: 13, fontWeight: 800 }}>{selectedTemplate.label}</span>
+              </div>
+              <button onClick={() => setSelectedTemplate(null)} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Change</button>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
               <div>
                 <label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Equipment Type *</label>
@@ -946,7 +1443,7 @@ function QCApp() {
               const keepInv = invoiceNum;
               const keepOrd = orderNum;
               const keepDate = meta.inspectionDate;
-              resetInspection(equip.manufacturer, equip.equipmentType);
+              resetInspection(equip.manufacturer, equip.equipmentType, selectedTemplate?.sections);
               setInvoiceNum(keepInv);
               setOrderNum(keepOrd);
               setMeta((p) => ({ ...p, inspectionDate: keepDate }));
@@ -955,6 +1452,7 @@ function QCApp() {
               Start Inspection
             </button>
           </div>
+          )}
         </div>
       )}
 
@@ -1060,11 +1558,17 @@ function QCApp() {
           <div style={{ ...card, background: "#3d5e3f", color: "#fff" }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <div>
-                <div style={{ fontSize: 16, fontWeight: 800 }}>{equip.equipmentType}</div>
-                <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                {selectedTemplate && (
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 6, padding: "3px 10px", borderRadius: 6, background: "rgba(255,255,255,0.15)", fontSize: 11, fontWeight: 700 }}>
+                    <span>{selectedTemplate.icon}</span>
+                    <span>{selectedTemplate.label} checklist</span>
+                  </div>
+                )}
+                <div style={{ fontSize: 16, fontWeight: 800 }}>{equip.equipmentType || selectedTemplate?.label}</div>
+                <div style={{ fontSize: 12, color: "#cbd5e1" }}>
                   {equip.manufacturer || ""} {equip.serialNumber ? `| S/N: ${equip.serialNumber}` : ""}
                 </div>
-                <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
                   {equip.amperageRating ? `${equip.amperageRating}A ` : ""}
                   {equip.kvaRating ? `${equip.kvaRating}KVA ` : ""}
                   {equip.voltageRating ? `${equip.voltageRating}V ` : ""}
@@ -1072,7 +1576,7 @@ function QCApp() {
                 </div>
               </div>
               {activeItem && (
-                <div style={{ fontSize: 9, color: "#64748b", textAlign: "right" }}>
+                <div style={{ fontSize: 9, color: "#cbd5e1", textAlign: "right" }}>
                   INV: {activeItem.id}<br />{activeItem.putaway_location || ""}
                 </div>
               )}
@@ -1123,11 +1627,11 @@ function QCApp() {
           </Section>
 
           {/* Checklist sections */}
-          {SECTIONS.map((sec) => {
+          {activeSections.map((sec) => {
             const sc = sectionChecks(sec.s);
             const color = sectionColor(sec.s);
             return (
-              <Section key={sec.s} title={sec.s} badge={sectionBadge(sec.s)} color={color} count={sc.filter((c) => c.result === "fail").length} countColor="#dc2626">
+              <Section key={sec.s} title={sec.s} badge={sectionBadge(sec.s)} color={color} count={sc.filter((c) => c.result === "fail").length} countColor="#dc2626" defaultOpen={true}>
                 {sc.map((c, ci) => {
                   const idx = checks.findIndex((ch) => ch.section === c.section && ch.checkItem === c.checkItem);
                   return (
@@ -1136,11 +1640,18 @@ function QCApp() {
                       background: c.result === "fail" ? "#fef2f215" : c.result === "flag" ? "#fef3c715" : "#fff",
                       border: `1px solid ${c.result === "fail" ? "#fecaca" : c.result === "flag" ? "#fde68a" : "#f1f5f9"}`,
                     }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "#1e293b", marginBottom: 6 }}>{c.checkItem}</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "#1e293b", flex: 1 }}>{c.checkItem}</div>
+                        {/* Per-check camera button */}
+                        <label style={{ flexShrink: 0, padding: "4px 8px", borderRadius: 6, border: c.photoUrl ? "1.5px solid #16a34a" : "1.5px solid #e2e8f0", background: c.photoUrl ? "#dcfce7" : "#fff", color: c.photoUrl ? "#16a34a" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                          {c.photoUrl ? "✓ 📸" : "📸"}
+                          <input type="file" accept="image/*" capture="environment" onChange={(e) => handleCheckPhoto(idx, e.target.files?.[0])} style={{ display: "none" }} />
+                        </label>
+                      </div>
                       <div style={{ display: "flex", gap: 4 }}>
                         {RESULTS.map((r) => (
                           <button key={r.v} onClick={() => setCheck(idx, "result", r.v)} style={{
-                            flex: 1, padding: "8px 0", borderRadius: 6,
+                            flex: 1, padding: "10px 0", borderRadius: 6,
                             border: `2px solid ${c.result === r.v ? r.c : "#e5e7eb"}`,
                             background: c.result === r.v ? r.c + "15" : "#fff",
                             color: c.result === r.v ? r.c : "#cbd5e1",
@@ -1148,9 +1659,16 @@ function QCApp() {
                           }}>{r.i} {r.l}</button>
                         ))}
                       </div>
+                      {/* Photo thumbnail with delete */}
+                      {c.photoUrl && (
+                        <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                          <img src={c.photoUrl} alt="" style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "1.5px solid #16a34a" }} />
+                          <button onClick={() => setCheck(idx, "photoUrl", "")} style={{ background: "none", border: "none", color: "#dc2626", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Remove photo</button>
+                        </div>
+                      )}
                       {(c.result === "fail" || c.result === "flag") && (
                         <input style={{ ...inputSm, marginTop: 6, borderColor: c.result === "fail" ? "#fecaca" : "#fde68a" }}
-                          value={c.notes} onChange={(e) => setCheck(idx, "notes", e.target.value)} placeholder="Notes..." />
+                          value={c.notes} onChange={(e) => setCheck(idx, "notes", e.target.value)} placeholder="What's wrong?" />
                       )}
                     </div>
                   );
@@ -1297,6 +1815,7 @@ function QCApp() {
                 const draftId = activeItem?.id || "manual";
                 clearDraft(activeItem?.id);
                 setDrafts((p) => { const n = { ...p }; delete n[draftId]; return n; });
+                setSelectedTemplate(null);
                 setTab("inventory");
                 if (activeItem) changeStatus(activeItem.id, "received");
               }} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#64748b", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Discard</button>
