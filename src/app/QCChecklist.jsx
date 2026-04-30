@@ -1,5 +1,14 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import { sb, SB_URL, SB_KEY } from "../lib/sb";
+import {
+  getCurrentInspector,
+  clearCurrentInspector,
+  canEditInspection,
+  editWindowRemaining,
+} from "../lib/inspector";
+import InspectorGate from "./InspectorGate";
+import InvoicePullModal from "./InvoicePullModal";
 
 /* ── Logo Components ───────────────────────────────────── */
 const LogoMark = ({ size = 32, color = "#58815a" }) => (
@@ -37,25 +46,7 @@ const SplashScreen = ({ onDone }) => {
   );
 };
 
-/* ── Supabase ──────────────────────────────────────────── */
-const SB_URL = "https://ulyycjtrshpsjpvbztkr.supabase.co";
-const SB_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVseXljanRyc2hwc2pwdmJ6dGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMzg1NzAsImV4cCI6MjA5MDcxNDU3MH0.UYwCdYrdy20xl_hCkO8t4CAB16vBHj-oMdflDv1XlVE";
-const hdrs = {
-  apikey: SB_KEY,
-  Authorization: `Bearer ${SB_KEY}`,
-  "Content-Type": "application/json",
-  Prefer: "return=representation",
-};
-async function sb(path, opts = {}) {
-  const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
-    ...opts,
-    headers: { ...hdrs, ...(opts.headers || {}) },
-  });
-  if (!r.ok) throw new Error(`${r.status}`);
-  const t = await r.text();
-  return t ? JSON.parse(t) : null;
-}
+/* ── Supabase: client + helpers imported from ../lib/sb ── */
 
 /* ── Constants ─────────────────────────────────────────── */
 const EQUIP_TYPES = [
@@ -218,24 +209,25 @@ const EQUIPMENT_TEMPLATES = [
       {
         s: "Termination",
         items: [
-          "Phase colors verified (A/B/C/N)",
-          "Main phase wires correct size, terminated",
-          "Ground wire correct size and designation",
+          "Phase colors verified — A/B/C/N (NEC 210.5)",
+          "Main phase wires correct size, terminated (NEC 110.14)",
+          "Ground wire correct size and designation (NEC 250.122)",
           "Feeder wires Ohmed and verified",
-          "Neutral bonding correct (bonded only if 1st means of disc)",
+          "Neutral bonding correct — bonded only if 1st means of disc (NEC 250.24)",
         ],
       },
       {
         s: "General",
         items: [
-          "Branch wires numbered, phase colors correct",
-          "K.O. seals installed (NEC 408.7)",
+          "Branch wires numbered, phase colors correct (NEC 210.5(C))",
+          "K.O. seals installed (NEC 110.12(A), 408.7)",
           "Tap can box correct size",
-          "Finger-safe term blocks in tap can (no Wagos)",
-          "Conduit bushings as required",
+          "Finger-safe term blocks in tap can — no Wagos",
+          "Conduit bushings as required (NEC 300.4(F))",
           "Grounded per NEC 250",
           "Locknuts and bushings tight",
-          "Panel ID label on unit",
+          "Panel ID label on unit (NEC 408.4(B))",
+          "Arc flash label attached (NEC 110.16)",
           "Clean inside and out",
         ],
       },
@@ -250,34 +242,34 @@ const EQUIPMENT_TEMPLATES = [
       {
         s: "Termination",
         items: [
-          "LV phases verified (A-Blk, B-Red, C-Blue)",
-          "HV phases verified (A-Brn, B-Or, C-Yel)",
-          "Mounting bolts/nuts Grade 5, correct size",
-          "Mech lug sizes correct for cable",
-          "Crimped terms installed correctly",
-          "Bolts tight (or sign attached: not torqued)",
-          "System bonding jumper XO to GEC",
-          "EGCs/bonding on multi-barrel lug or bus bar (NEC 450.10, 250.8)",
+          "LV phases verified — A-Black, B-Red, C-Blue (NEC 210.5)",
+          "HV phases verified — A-Brown, B-Orange, C-Yellow (NEC 210.5)",
+          "Mounting bolts/nuts Grade 5, correct size for lug",
+          "Mech lug sizes correct for cable (NEC 110.14)",
+          "Crimped terminations installed correctly (NEC 110.14)",
+          "Bolts torqued to spec OR sign attached: 'Equipment not Torqued'",
+          "System bonding jumper XO to GEC (NEC 450.10, 250.30)",
+          "EGCs/bonding on multi-barrel lug or bus bar — not singles w/jumper, not over air vents (NEC 450.10, 250.8)",
         ],
       },
       {
         s: "General",
         items: [
-          "Shipping braces in place",
-          "K.O. seals installed",
-          "Locknuts tight",
+          "Shipping braces left in place",
+          "K.O. seals installed (NEC 110.12(A), 408.7)",
+          "All locknuts tight",
           "Phase colors verified to H1/H2/H3",
           "Grounded per NEC 250",
-          "Ground bushings tight (incl. ground lug)",
-          "Labels attached (NEC 110.16)",
+          "Ground bushings tight — incl. ground lug",
+          "Arc flash labels attached (NEC 110.16)",
           "Clean inside and out",
         ],
       },
       {
         s: "Electrical Test",
         items: [
-          "Megger test performed",
-          "Megger readings acceptable",
+          "Megger test performed at correct voltage",
+          "Megger readings within acceptable range",
           "Voltage verified vs nameplate",
         ],
       },
@@ -293,7 +285,7 @@ const EQUIPMENT_TEMPLATES = [
         s: "Visual / Physical",
         items: [
           "Enclosure no dents, rust, corrosion",
-          "Operating handle smooth, locks in OFF",
+          "Operating handle smooth, locks in OFF (NEC 110.25)",
           "Door latches functional",
           "Nameplate legible",
           "No moisture or burn marks",
@@ -302,10 +294,10 @@ const EQUIPMENT_TEMPLATES = [
       {
         s: "Electrical",
         items: [
-          "Line/load terminals tight",
-          "Phase colors correct",
-          "Ground lug present and bonded",
-          "Fuse clips clean (if fusible)",
+          "Line/load terminals tight (NEC 110.14)",
+          "Phase colors correct (NEC 210.5)",
+          "Ground lug present and bonded (NEC 250)",
+          "Fuse clips clean — if fusible",
           "Continuity verified all poles",
           "Megger phase-to-phase",
           "Megger phase-to-ground",
@@ -315,7 +307,7 @@ const EQUIPMENT_TEMPLATES = [
         s: "Labels & Safety",
         items: [
           "Voltage rating label",
-          "Arc flash label (if required)",
+          "Arc flash label (NEC 110.16)",
           "Hardin inventory label applied",
         ],
       },
@@ -331,8 +323,8 @@ const EQUIPMENT_TEMPLATES = [
         s: "Visual / Physical",
         items: [
           "Enclosure clean, no damage",
-          "Cable/connector intact, no cuts",
-          "Mounting hardware secure",
+          "Cable/connector intact, no cuts (NEC 625.17)",
+          "Mounting hardware secure (NEC 625.50)",
           "Display/indicators functional",
         ],
       },
@@ -341,8 +333,8 @@ const EQUIPMENT_TEMPLATES = [
         items: [
           "Input voltage correct vs nameplate",
           "Output voltage correct vs spec",
-          "GFCI/RCD test passed",
-          "Ground continuity verified",
+          "GFCI/CCID test passed (NEC 625.22)",
+          "Ground continuity verified (NEC 250)",
         ],
       },
       {
@@ -372,12 +364,12 @@ const EQUIPMENT_TEMPLATES = [
       {
         s: "Electrical",
         items: [
-          "All outlets / receptacles tested",
-          "GFCI test on each circuit",
+          "All outlets / receptacles tested (NEC 406)",
+          "GFCI test on each circuit (NEC 590.6, 210.8(B))",
           "Phase rotation correct",
-          "Cable insulation intact (no nicks)",
-          "Strain reliefs tight",
-          "Ground continuity all circuits",
+          "Cable insulation intact, no nicks (NEC 590.4(D))",
+          "Strain reliefs tight (NEC 400.10)",
+          "Ground continuity all circuits (NEC 250)",
         ],
       },
       {
@@ -401,27 +393,27 @@ const EQUIPMENT_TEMPLATES = [
           "Skid frame welds intact",
           "Forklift pockets clear",
           "Lifting eyes rated and marked",
-          "Weatherproof seals intact",
+          "Weatherproof seals intact (NEC 312.2)",
           "Door latches and hinges functional",
         ],
       },
       {
         s: "Termination",
         items: [
-          "Main lugs torqued to spec",
-          "Phase colors verified (A/B/C/N)",
-          "Ground bus bonded",
-          "Cam-lock connectors clean (if equipped)",
-          "All branch breakers seated and torqued",
+          "Main lugs torqued to spec (NEC 110.14(D))",
+          "Phase colors verified — A/B/C/N (NEC 210.5)",
+          "Ground bus bonded (NEC 250.30)",
+          "Cam-lock connectors clean — if equipped",
+          "All branch breakers seated and torqued (NEC 110.14)",
         ],
       },
       {
         s: "Electrical Test",
         items: [
-          "Megger phase-to-phase (3 readings)",
-          "Megger phase-to-ground (3 readings)",
+          "Megger phase-to-phase — 3 readings",
+          "Megger phase-to-ground — 3 readings",
           "Continuity all branch circuits",
-          "GFCI test on each GFCI circuit",
+          "GFCI test on each GFCI circuit (NEC 590.6, 210.8)",
           "Phase rotation correct",
           "Voltage at output verified vs nameplate",
         ],
@@ -429,18 +421,18 @@ const EQUIPMENT_TEMPLATES = [
       {
         s: "Safety & Labels",
         items: [
-          "Arc flash label current",
+          "Arc flash label current (NEC 110.16)",
           "Voltage / amperage rating label",
           "Hardin serial label with QR applied",
-          "Panel schedule typed and installed",
-          "Equipment grounding verified",
+          "Panel schedule typed and installed (NEC 408.4)",
+          "Equipment grounding verified (NEC 250)",
         ],
       },
       {
         s: "Final",
         items: [
           "Clean inside and out",
-          "Photos taken (pre-load condition)",
+          "Photos taken — pre-load condition",
           "Cables coiled / stowed",
         ],
       },
@@ -457,11 +449,11 @@ const EQUIPMENT_TEMPLATES = [
         items: [
           "Enclosure no dents, rust, corrosion",
           "Doors, latches, hinges functional",
-          "Gaskets and seals intact",
+          "Gaskets and seals intact (NEC 312.2)",
           "No water damage or moisture",
           "No arcing or burn marks",
           "Interior clean, free of debris",
-          "Nameplates legible",
+          "Nameplates legible (NEC 110.21)",
         ],
       },
       {
@@ -469,10 +461,10 @@ const EQUIPMENT_TEMPLATES = [
         items: [
           "Bus bars no pitting or warping",
           "Bus bar insulation intact",
-          "Phase ID correct (A/B/C)",
-          "Ground bus present and bonded",
-          "Lug crimps secure",
-          "Anti-oxidant on aluminum connections",
+          "Phase ID correct — A/B/C (NEC 408.3(F))",
+          "Ground bus present and bonded (NEC 250)",
+          "Lug crimps secure (NEC 110.14)",
+          "Anti-oxidant on aluminum connections (NEC 110.14)",
           "Landing pads clean",
         ],
       },
@@ -485,7 +477,7 @@ const EQUIPMENT_TEMPLATES = [
           "Breaker contacts no pitting",
           "Stabs/mounting secure",
           "Racking mechanism smooth",
-          "Interlocks operational",
+          "Interlocks operational (NEC 110.25)",
         ],
       },
       {
@@ -493,17 +485,17 @@ const EQUIPMENT_TEMPLATES = [
         items: [
           "Megger phase-to-phase",
           "Megger phase-to-ground",
-          "Contact resistance (micro-ohm)",
+          "Contact resistance — micro-ohm test",
           "Continuity all circuits",
-          "Ground fault path verified",
+          "Ground fault path verified (NEC 250)",
         ],
       },
       {
         s: "Safety & Final",
         items: [
-          "Arc flash labels current",
+          "Arc flash labels current (NEC 110.16)",
           "UL/CSA listing verified",
-          "Equipment grounding verified",
+          "Equipment grounding verified (NEC 250)",
           "Hardin inventory label applied",
         ],
       },
@@ -522,7 +514,7 @@ const EQUIPMENT_TEMPLATES = [
           "All bucket doors functional",
           "Interior clean",
           "No burn marks or arcing",
-          "Nameplates and bucket labels legible",
+          "Nameplates and bucket labels legible (NEC 110.21)",
         ],
       },
       {
@@ -531,7 +523,7 @@ const EQUIPMENT_TEMPLATES = [
           "Vertical bus clean, no pitting",
           "Horizontal bus secure",
           "Stabs make full contact in each bucket",
-          "Ground bus bonded to each bucket",
+          "Ground bus bonded to each bucket (NEC 250)",
         ],
       },
       {
@@ -539,9 +531,9 @@ const EQUIPMENT_TEMPLATES = [
         items: [
           "Each bucket racks in/out smoothly",
           "Contactors operate freely",
-          "Overload relays present and correct size",
+          "Overload relays present and correct size (NEC 430.32)",
           "Control transformers test OK",
-          "Disconnect handles operate",
+          "Disconnect handles operate (NEC 430.102)",
         ],
       },
       {
@@ -555,8 +547,8 @@ const EQUIPMENT_TEMPLATES = [
       {
         s: "Final",
         items: [
-          "Arc flash labels current",
-          "Bucket schedule documented",
+          "Arc flash labels current (NEC 110.16)",
+          "Bucket schedule documented (NEC 408.4)",
           "Hardin inventory label applied",
         ],
       },
@@ -575,7 +567,7 @@ const EQUIPMENT_TEMPLATES = [
           "Cooling fans functional",
           "Display/HMI operational",
           "No alarms or fault codes",
-          "Battery cabinet inspected",
+          "Battery cabinet inspected (NEC 480)",
         ],
       },
       {
@@ -585,8 +577,8 @@ const EQUIPMENT_TEMPLATES = [
           "Output breaker operational",
           "Bypass switch operational",
           "Battery voltage in spec",
-          "Battery terminals torqued and clean",
-          "Ground continuity verified",
+          "Battery terminals torqued and clean (NEC 480.6)",
+          "Ground continuity verified (NEC 250)",
         ],
       },
       {
@@ -849,6 +841,24 @@ function QCApp() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
+  /* ── Current inspector (v9a) ── */
+  const [currentInspector, setCurrentInspectorState] = useState(null);
+  const [showInspectorGate, setShowInspectorGate] = useState(false);
+  useEffect(() => {
+    const insp = getCurrentInspector();
+    if (insp) setCurrentInspectorState(insp);
+    else setShowInspectorGate(true);
+  }, []);
+  const switchInspector = () => setShowInspectorGate(true);
+
+  /* ── Invoice pull modal (v9a) ── */
+  const [showInvoicePull, setShowInvoicePull] = useState(false);
+
+  /* ── Edit mode (v9a) ── */
+  // When set, saveInspection PATCHes this id instead of POSTing a new row.
+  const [editingInspection, setEditingInspection] = useState(null);
+  const [editReason, setEditReason] = useState("");
+
   /* ── Install prompt ── */
   const { deferredPrompt, isStandalone, isIOS, promptInstall } = useInstallPrompt();
   const [showInstall, setShowInstall] = useState(false);
@@ -862,6 +872,24 @@ function QCApp() {
   /* ── Drafts ── */
   const [drafts, setDrafts] = useState({});
   useEffect(() => { setDrafts(listDrafts()); }, []);
+
+  /* ── Surface QBO OAuth callback result as a toast (v9b) ── */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const qbo = params.get("qbo");
+    if (!qbo) return;
+    if (qbo === "connected") {
+      setToast({ t: "success", m: "QuickBooks connected" });
+    } else if (qbo === "error") {
+      setToast({ t: "error", m: `QuickBooks: ${params.get("reason") || "unknown error"}` });
+    }
+    // Strip the query so a refresh does not retoast
+    const url = new URL(window.location.href);
+    url.searchParams.delete("qbo");
+    url.searchParams.delete("reason");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
 
   /* ── Selected equipment template ── */
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -903,6 +931,12 @@ function QCApp() {
   const [meta, setMeta] = useState({
     inspectedBy: "", inspectionDate: today(), inspectionType: "incoming", notes: "",
   });
+  // Auto-fill inspector name when identity is known and field is empty (or matches an old default).
+  useEffect(() => {
+    if (currentInspector?.name && !meta.inspectedBy) {
+      setMeta((p) => ({ ...p, inspectedBy: currentInspector.name }));
+    }
+  }, [currentInspector, meta.inspectedBy]);
   const [checks, setChecks] = useState([]);
   const [megger, setMegger] = useState({
     aToB: "", bToC: "", cToA: "", aToG: "", bToG: "", cToG: "", testV: "1000",
@@ -967,7 +1001,7 @@ function QCApp() {
       if (t) setSelectedTemplate(t);
     }
     setEquip(draft.equip || {});
-    setMeta(draft.meta || { inspectedBy: "", inspectionDate: today(), inspectionType: "incoming", notes: "" });
+    setMeta(draft.meta || { inspectedBy: currentInspector?.name || "", inspectionDate: today(), inspectionType: "incoming", notes: "" });
     setChecks(draft.checks && draft.checks.length ? draft.checks : initChecks());
     setMegger(draft.megger || { aToB: "", bToC: "", cToA: "", aToG: "", bToG: "", cToG: "", testV: "1000" });
     setTorques(draft.torques || []);
@@ -1048,7 +1082,7 @@ function QCApp() {
         jobSite: item.source_job_site || "", customerName: item.customer_origin || "",
         sourceLocation: item.location || "",
       });
-      setMeta(draft.meta || { inspectedBy: "", inspectionDate: today(), inspectionType: "incoming", notes: "" });
+      setMeta(draft.meta || { inspectedBy: currentInspector?.name || "", inspectionDate: today(), inspectionType: "incoming", notes: "" });
       setChecks(draft.checks && draft.checks.length ? draft.checks : initChecks());
       setMegger(draft.megger || { aToB: "", bToC: "", cToA: "", aToG: "", bToG: "", cToG: "", testV: "1000" });
       setTorques(draft.torques || []);
@@ -1092,7 +1126,7 @@ function QCApp() {
     setStickerNum("");
     setOrderNum("");
     setInvoiceNum("");
-    setMeta({ inspectedBy: "", inspectionDate: today(), inspectionType: "incoming", notes: "" });
+    setMeta({ inspectedBy: currentInspector?.name || "", inspectionDate: today(), inspectionType: "incoming", notes: "" });
     loadTorqueSpecs(mfr, eqType);
   };
 
@@ -1152,12 +1186,25 @@ function QCApp() {
       return;
     }
     setSaving(true);
-    const inspId = `QC-${Date.now().toString(36).toUpperCase()}`;
+    const isEdit = Boolean(editingInspection);
+    const inspId = isEdit ? editingInspection.id : `QC-${Date.now().toString(36).toUpperCase()}`;
+
+    // Shared payload for both POST (new) and PATCH (edit)
+    const meggerPayload = {
+      megger_a_to_b: megger.aToB || null,
+      megger_b_to_c: megger.bToC || null,
+      megger_c_to_a: megger.cToA || null,
+      megger_a_to_g: megger.aToG || null,
+      megger_b_to_g: megger.bToG || null,
+      megger_c_to_g: megger.cToG || null,
+      megger_test_v: megger.testV || null,
+    };
+    const torquesPayload = torques && torques.length ? torques : null;
+
     try {
-      await sb("qc_inspections", {
-        method: "POST",
-        body: JSON.stringify({
-          id: inspId,
+      if (isEdit) {
+        // PATCH the existing inspection. Update fields + audit columns.
+        const patch = {
           equipment_type: equip.equipmentType,
           manufacturer: equip.manufacturer,
           model_number: equip.modelNumber,
@@ -1177,11 +1224,58 @@ function QCApp() {
           sticker_signed_by: meta.inspectedBy,
           sticker_date: stickerNum ? meta.inspectionDate : null,
           invoice_number: invoiceNum || null,
-          qb_sync_status: "pending",
-        }),
-      });
+          ...meggerPayload,
+          torques: torquesPayload,
+          updated_at: new Date().toISOString(),
+          update_count: (editingInspection.update_count || 0) + 1,
+          last_edit_reason: editReason?.trim() || null,
+          // If this inspection was already attached to QB, an edit makes it stale.
+          // The History tab shows a Re-sync button when status is 'stale'.
+          ...(editingInspection.qb_attach_status === "attached" ? { qb_attach_status: "stale" } : {}),
+        };
+        await sb(`qc_inspections?id=eq.${inspId}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        });
 
-      // Save checklist items
+        // Rewrite child rows: delete-then-reinsert so the inspection state
+        // exactly matches the form. Cleaner than diffing.
+        await sb(`qc_checklist_items?inspection_id=eq.${inspId}`, { method: "DELETE" });
+        await sb(`item_photos?reference_id=eq.${inspId}&reference_type=eq.qc_inspection`, { method: "DELETE" });
+        await sb(`inventory_deficiencies?inspection_id=eq.${inspId}`, { method: "DELETE" });
+      } else {
+        await sb("qc_inspections", {
+          method: "POST",
+          body: JSON.stringify({
+            id: inspId,
+            equipment_type: equip.equipmentType,
+            manufacturer: equip.manufacturer,
+            model_number: equip.modelNumber,
+            serial_number: equip.serialNumber,
+            voltage_rating: equip.voltageRating,
+            amperage_rating: equip.amperageRating,
+            job_site: equip.jobSite,
+            customer_name: equip.customerName,
+            source_location: equip.sourceLocation,
+            inspected_by: meta.inspectedBy,
+            inspection_date: meta.inspectionDate,
+            inspection_type: meta.inspectionType,
+            overall_result: result,
+            notes: meta.notes,
+            photos_count: photos.length,
+            sticker_number: stickerNum || null,
+            sticker_signed_by: meta.inspectedBy,
+            sticker_date: stickerNum ? meta.inspectionDate : null,
+            invoice_number: invoiceNum || null,
+            qb_sync_status: "pending",
+            inspector_id: currentInspector?.id || null,
+            ...meggerPayload,
+            torques: torquesPayload,
+          }),
+        });
+      }
+
+      // Save checklist items (insert path used for both POST and PATCH after delete)
       const checkRows = checks
         .filter((c) => c.result !== "not_checked")
         .map((c) => ({
@@ -1191,12 +1285,13 @@ function QCApp() {
         }));
       if (checkRows.length) await sb("qc_checklist_items", { method: "POST", body: JSON.stringify(checkRows) });
 
-      // Save deficiencies
+      // Save deficiencies (now linked to inspection_id so edits can replace cleanly)
       if (activeItem) {
         const defRows = deficiencies
           .filter((d) => d.description)
           .map((d) => ({
-            inventory_id: activeItem.id, category: d.category || "General",
+            inventory_id: activeItem.id, inspection_id: inspId,
+            category: d.category || "General",
             description: d.description, severity: d.severity || "moderate",
             repair_needed: d.repairNeeded || false,
             repair_estimate: d.repairEstimate ? parseFloat(d.repairEstimate) : null,
@@ -1213,8 +1308,8 @@ function QCApp() {
         await sb("item_photos", { method: "POST", body: JSON.stringify(photoRows) });
       }
 
-      // Update inventory item
-      if (activeItem) {
+      // Update inventory item (skip on edit: status flow already happened on original save)
+      if (activeItem && !isEdit) {
         const patch = {
           status: { pass: "qc_pass", fail: "qc_fail", conditional: "conditional" }[result] || "qc_pass",
           qc_inspection_id: inspId, qc_result: result,
@@ -1227,18 +1322,125 @@ function QCApp() {
         setItems((prev) => prev.map((i) => (i.id === activeItem.id ? { ...i, ...patch } : i)));
       }
 
-      setToast({ t: "success", m: `QC ${result.toUpperCase()} saved - ${inspId}` });
-      // Clear draft now that it is saved to DB
+      setToast({
+        t: "success",
+        m: isEdit ? `Updated ${inspId}` : `QC ${result.toUpperCase()} saved - ${inspId}`,
+      });
+
+      // Clear draft + edit state
       const draftId = activeItem?.id || "manual";
       clearDraft(activeItem?.id);
       setDrafts((p) => { const n = { ...p }; delete n[draftId]; return n; });
       setSelectedTemplate(null);
-      setTab("inventory");
-      loadItems();
+      setEditingInspection(null);
+      setEditReason("");
+      setTab(isEdit ? "history" : "inventory");
+      if (isEdit) loadHistory();
+      else loadItems();
     } catch (e) {
       setToast({ t: "error", m: "Save failed: " + e.message });
     }
     setSaving(false);
+  };
+
+  /* ── Load an inspection back into the form for editing (v9a) ── */
+  const loadInspectionForEdit = async (inspection) => {
+    if (!canEditInspection(inspection, currentInspector)) {
+      setToast({ t: "error", m: "Edit window closed or not your inspection" });
+      return;
+    }
+    try {
+      const [checkRows, photoRows, defRows] = await Promise.all([
+        sb(`qc_checklist_items?inspection_id=eq.${inspection.id}&order=sort_order`),
+        sb(`item_photos?reference_id=eq.${inspection.id}&reference_type=eq.qc_inspection`),
+        sb(`inventory_deficiencies?inspection_id=eq.${inspection.id}`),
+      ]);
+
+      setEquip({
+        equipmentType: inspection.equipment_type || "",
+        manufacturer: inspection.manufacturer || "",
+        modelNumber: inspection.model_number || "",
+        serialNumber: inspection.serial_number || "",
+        voltageRating: inspection.voltage_rating || "",
+        amperageRating: inspection.amperage_rating || "",
+        kvaRating: inspection.kva_rating || "",
+        catalogNumber: inspection.catalog_number || "",
+        jobSite: inspection.job_site || "",
+        customerName: inspection.customer_name || "",
+        sourceLocation: inspection.source_location || "",
+      });
+      setMeta({
+        inspectedBy: inspection.inspected_by || currentInspector?.name || "",
+        inspectionDate: inspection.inspection_date || today(),
+        inspectionType: inspection.inspection_type || "incoming",
+        notes: inspection.notes || "",
+      });
+      setChecks(
+        (checkRows || []).map((r) => ({
+          section: r.section, checkItem: r.check_item,
+          result: r.result, notes: r.notes || "",
+          photoUrl: r.photo_url || "", sort: r.sort_order || 0,
+        }))
+      );
+      setMegger({
+        aToB: inspection.megger_a_to_b || "",
+        bToC: inspection.megger_b_to_c || "",
+        cToA: inspection.megger_c_to_a || "",
+        aToG: inspection.megger_a_to_g || "",
+        bToG: inspection.megger_b_to_g || "",
+        cToG: inspection.megger_c_to_g || "",
+        testV: inspection.megger_test_v || "1000",
+      });
+      setTorques(Array.isArray(inspection.torques) ? inspection.torques : []);
+      setDeficiencies(
+        (defRows || []).map((d) => ({
+          category: d.category || "General",
+          description: d.description || "",
+          severity: d.severity || "moderate",
+          repairNeeded: !!d.repair_needed,
+          repairEstimate: d.repair_estimate != null ? String(d.repair_estimate) : "",
+        }))
+      );
+      setPhotos((photoRows || []).map((p) => p.photo_url));
+      setStickerNum(inspection.sticker_number || "");
+      setOrderNum(inspection.order_number || "");
+      setInvoiceNum(inspection.invoice_number || "");
+      setActiveItem(null); // editing detaches from any inventory context
+      setEditingInspection(inspection);
+      setEditReason("");
+      setSelectedTemplate(null);
+      setTab("inspect");
+    } catch (e) {
+      setToast({ t: "error", m: "Could not load inspection: " + e.message });
+    }
+  };
+
+  /* ── Attach an inspection to its QBO Invoice as a PDF (v9b) ── */
+  const [attachingId, setAttachingId] = useState(null);
+  const attachToQbo = async (inspection) => {
+    if (!inspection?.id) return;
+    if (!inspection.invoice_number) {
+      setToast({ t: "error", m: "Inspection has no invoice number" });
+      return;
+    }
+    setAttachingId(inspection.id);
+    try {
+      const r = await fetch("/api/qbo/attach-inspection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inspectionId: inspection.id }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setToast({ t: "error", m: j.error || `Attach failed (${r.status})` });
+      } else {
+        setToast({ t: "success", m: `Attached ${inspection.id} to QB invoice` });
+        loadHistory();
+      }
+    } catch (e) {
+      setToast({ t: "error", m: "Attach failed: " + e.message });
+    }
+    setAttachingId(null);
   };
 
   /* ── Checklist helpers ── */
@@ -1274,6 +1476,34 @@ function QCApp() {
 
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
 
+      {/* Inspector identity gate */}
+      {showInspectorGate && (
+        <InspectorGate
+          onSelect={(insp) => {
+            setCurrentInspectorState(insp);
+            setShowInspectorGate(false);
+            // Refresh meta.inspectedBy so the form reflects the new identity
+            setMeta((p) => ({ ...p, inspectedBy: insp.name }));
+          }}
+          onCancel={currentInspector ? () => setShowInspectorGate(false) : null}
+        />
+      )}
+
+      {/* Invoice pull modal */}
+      {showInvoicePull && (
+        <InvoicePullModal
+          onClose={() => setShowInvoicePull(false)}
+          onCreated={(result, header) => {
+            setShowInvoicePull(false);
+            setToast({
+              t: "success",
+              m: `Created ${result.itemCount} item${result.itemCount === 1 ? "" : "s"} from INV ${result.invoiceNumber}`,
+            });
+            loadItems();
+          }}
+        />
+      )}
+
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, padding: "12px 0", borderBottom: "3px solid #58815a" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1281,9 +1511,21 @@ function QCApp() {
           <div>
             <div style={{ fontSize: 16, fontWeight: 800, color: "#565756", letterSpacing: 2 }}>HARDIN</div>
             <div style={{ fontSize: 9, color: "#58815a", fontWeight: 700, letterSpacing: 1.5 }}>QUALITY CONTROL</div>
+            {currentInspector && (
+              <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 600, marginTop: 1 }}>
+                {currentInspector.name}
+                {currentInspector.role === "admin" ? " · admin" : ""}
+              </div>
+            )}
           </div>
         </div>
         <div style={{ display: "flex", gap: 4 }}>
+          {currentInspector && (
+            <button onClick={switchInspector} title="Switch inspector" style={{
+              padding: "8px 10px", borderRadius: 8, border: "none",
+              background: "#f1f5f9", color: "#475569", fontWeight: 700, fontSize: 12, cursor: "pointer",
+            }}>👤</button>
+          )}
           {!isStandalone && (
             <button onClick={() => setShowInstall(true)} title="Install app" style={{ padding: "8px 10px", borderRadius: 8, border: "none", background: "#fffbeb", color: "#92400e", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>📲</button>
           )}
@@ -1459,6 +1701,21 @@ function QCApp() {
       {/* ── INVENTORY TAB ── */}
       {tab === "inventory" && (
         <div>
+          {/* Pull from Invoice banner */}
+          <button
+            onClick={() => setShowInvoicePull(true)}
+            style={{
+              width: "100%", padding: 14, marginBottom: 10,
+              border: "none", borderRadius: 12,
+              background: "linear-gradient(135deg, #3d5e3f 0%, #58815a 100%)",
+              color: "#fff", fontWeight: 800, fontSize: 13,
+              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              boxShadow: "0 2px 6px rgba(61,94,63,0.25)",
+            }}
+          >
+            📋 Pull from Invoice #
+          </button>
+
           {/* In-progress drafts banner */}
           {Object.keys(drafts).filter((k) => k !== "manual").length > 0 && (
             <div style={{ ...card, background: "#fffbeb", border: "1.5px solid #fde68a", padding: 12 }}>
@@ -1506,6 +1763,7 @@ function QCApp() {
                       {item.qc_sticker && <span style={{ padding: "2px 6px", borderRadius: 6, background: "#16a34a18", color: "#16a34a", fontSize: 9, fontWeight: 700 }}>QC: {item.qc_sticker}</span>}
                       {item.order_number && <span style={{ padding: "2px 6px", borderRadius: 6, background: "#0369a118", color: "#0369a1", fontSize: 9, fontWeight: 700 }}>Order: {item.order_number}</span>}
                       {item.invoice_number && <span style={{ padding: "2px 6px", borderRadius: 6, background: "#7c3aed18", color: "#7c3aed", fontSize: 9, fontWeight: 700 }}>Inv: {item.invoice_number}</span>}
+                      {item.line_item_index && <span style={{ padding: "2px 6px", borderRadius: 6, background: "#0e7490", color: "#fff", fontSize: 9, fontWeight: 700 }}>#{item.line_item_index}</span>}
                     </div>
                     <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
                       {item.serial_number ? `S/N: ${item.serial_number}` : ""}
@@ -1554,6 +1812,49 @@ function QCApp() {
       {/* ── INSPECT TAB ── */}
       {tab === "inspect" && (
         <div>
+          {/* Edit-mode banner */}
+          {editingInspection && (
+            <div style={{
+              ...card,
+              background: "#fffbeb", border: "1.5px solid #fbbf24", padding: 12,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#92400e" }}>
+                    🔧 Editing {editingInspection.id}
+                  </div>
+                  <div style={{ fontSize: 10, color: "#92400e" }}>
+                    Originally saved {editingInspection.created_at?.slice(0, 10) || ""}
+                    {" · "}
+                    {editWindowRemaining(editingInspection) || ""}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    if (!confirm("Discard your edits and return to history?")) return;
+                    setEditingInspection(null);
+                    setEditReason("");
+                    setSelectedTemplate(null);
+                    setTab("history");
+                  }}
+                  style={{
+                    padding: "6px 10px", borderRadius: 6, border: "1px solid #fbbf24",
+                    background: "#fff", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                  }}
+                >Cancel edit</button>
+              </div>
+              <input
+                value={editReason}
+                onChange={(e) => setEditReason(e.target.value)}
+                placeholder="Reason for edit (optional)"
+                style={{
+                  width: "100%", padding: 8, border: "1px solid #fde68a", borderRadius: 6,
+                  fontSize: 11, background: "#fff", boxSizing: "border-box",
+                }}
+              />
+            </div>
+          )}
+
           {/* Equipment header */}
           <div style={{ ...card, background: "#3d5e3f", color: "#fff" }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1593,7 +1894,23 @@ function QCApp() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
               <div>
                 <label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Inspector *</label>
-                <input style={inputSm} value={meta.inspectedBy} onChange={(e) => setMeta((p) => ({ ...p, inspectedBy: e.target.value }))} placeholder="Name" />
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  <input
+                    style={{ ...inputSm, background: "#f8fafc", color: "#1f2937", fontWeight: 700 }}
+                    value={meta.inspectedBy}
+                    readOnly
+                    placeholder="Tap Switch"
+                  />
+                  <button
+                    type="button"
+                    onClick={switchInspector}
+                    style={{
+                      padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db",
+                      background: "#fff", color: "#475569", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >Switch</button>
+                </div>
               </div>
               <div>
                 <label style={{ fontSize: 10, fontWeight: 600, color: "#6b7280" }}>Inspection Type</label>
@@ -1800,9 +2117,9 @@ function QCApp() {
               </div>
             )}
             <div style={{ display: "flex", gap: 6 }}>
-              <button disabled={saving} onClick={() => saveInspection("pass")} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>✓ PASS</button>
-              <button disabled={saving} onClick={() => saveInspection("conditional")} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", background: "#f59e0b", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>⚠ COND</button>
-              <button disabled={saving} onClick={() => saveInspection("fail")} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>✗ FAIL</button>
+              <button disabled={saving} onClick={() => saveInspection("pass")} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>{editingInspection ? "✓ UPDATE PASS" : "✓ PASS"}</button>
+              <button disabled={saving} onClick={() => saveInspection("conditional")} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", background: "#f59e0b", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>{editingInspection ? "⚠ UPDATE COND" : "⚠ COND"}</button>
+              <button disabled={saving} onClick={() => saveInspection("fail")} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>{editingInspection ? "✗ UPDATE FAIL" : "✗ FAIL"}</button>
             </div>
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
               <button onClick={() => {
@@ -1833,6 +2150,8 @@ function QCApp() {
           {history.map((h) => {
             const c = h.overall_result === "pass" ? "#16a34a" : h.overall_result === "fail" ? "#dc2626" : "#f59e0b";
             const expanded = expandedHist === h.id;
+            const editable = canEditInspection(h, currentInspector);
+            const remaining = editable ? editWindowRemaining(h) : null;
             return (
               <div key={h.id} style={{ ...card, borderLeft: `4px solid ${c}`, padding: 14, cursor: "pointer" }} onClick={() => setExpandedHist(expanded ? null : h.id)}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1842,18 +2161,114 @@ function QCApp() {
                       {h.serial_number ? `S/N: ${h.serial_number}` : ""} {h.amperage_rating ? `${h.amperage_rating}A` : ""}
                     </div>
                   </div>
-                  <span style={{ padding: "4px 12px", borderRadius: 8, background: c + "18", color: c, fontWeight: 800, fontSize: 12 }}>
-                    {(h.overall_result || "").toUpperCase()}
-                  </span>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <span style={{ padding: "4px 12px", borderRadius: 8, background: c + "18", color: c, fontWeight: 800, fontSize: 12 }}>
+                      {(h.overall_result || "").toUpperCase()}
+                    </span>
+                    {editable && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); loadInspectionForEdit(h); }}
+                        style={{
+                          padding: "4px 10px", borderRadius: 6, border: "1px solid #f59e0b",
+                          background: "#fffbeb", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                      >🔧 Edit</button>
+                    )}
+                    {h.invoice_number && (() => {
+                      const status = h.qb_attach_status || "not_sent";
+                      const isAttached = status === "attached";
+                      const isStale = status === "stale";
+                      const isPending = status === "pending" || attachingId === h.id;
+                      const isFailed = status === "failed";
+                      const label =
+                        isPending ? "Sending..." :
+                        isAttached ? "📎 Attached ✓" :
+                        isStale ? "📎 Re-sync" :
+                        isFailed ? "📎 Retry" :
+                        "📎 Attach to QB";
+                      const colorBg =
+                        isAttached ? "#ecfdf5" :
+                        isStale ? "#fff7ed" :
+                        isFailed ? "#fef2f2" :
+                        "#fff";
+                      const colorBorder =
+                        isAttached ? "#16a34a" :
+                        isStale ? "#f59e0b" :
+                        isFailed ? "#dc2626" :
+                        "#58815a";
+                      const colorText =
+                        isAttached ? "#065f46" :
+                        isStale ? "#92400e" :
+                        isFailed ? "#dc2626" :
+                        "#3d5e3f";
+                      return (
+                        <button
+                          disabled={isPending || isAttached}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isAttached) {
+                              if (h.qb_attachment_url) window.open(h.qb_attachment_url, "_blank");
+                              return;
+                            }
+                            attachToQbo(h);
+                          }}
+                          title={h.qb_attach_error || ""}
+                          style={{
+                            padding: "4px 10px", borderRadius: 6,
+                            border: `1px solid ${colorBorder}`, background: colorBg, color: colorText,
+                            fontSize: 10, fontWeight: 700, whiteSpace: "nowrap",
+                            cursor: isPending ? "default" : "pointer",
+                            opacity: isPending ? 0.6 : 1,
+                          }}
+                        >{label}</button>
+                      );
+                    })()}
+                  </div>
                 </div>
                 <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>
                   {h.inspection_date} | {h.inspected_by} | {h.inspection_type}
                   {h.sticker_number ? ` | Sticker: ${h.sticker_number}` : ""}
                   {h.invoice_number ? ` | Inv: ${h.invoice_number}` : ""}
                   {h.qb_sync_status && h.qb_sync_status !== "pending" ? ` | QB: ${h.qb_sync_status}` : ""}
+                  {h.update_count ? ` | Edited ${h.update_count}×` : ""}
+                  {remaining ? ` | ${remaining} to edit` : ""}
                 </div>
+                {h.last_edit_reason && expanded && (
+                  <div style={{ fontSize: 10, color: "#92400e", marginTop: 6, padding: 6, background: "#fffbeb", borderRadius: 6, border: "1px solid #fde68a" }}>
+                    Last edit reason: {h.last_edit_reason}
+                  </div>
+                )}
                 {h.notes && expanded && (
                   <div style={{ fontSize: 11, color: "#475569", marginTop: 6, padding: 8, background: "#f8fafc", borderRadius: 6 }}>{h.notes}</div>
+                )}
+                {expanded && (
+                  <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <a
+                      href={`/api/inspection-pdf/${encodeURIComponent(h.id)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        fontSize: 10, fontWeight: 700, padding: "4px 10px",
+                        borderRadius: 6, border: "1px solid #475569",
+                        color: "#475569", textDecoration: "none", background: "#fff",
+                      }}
+                    >📄 View PDF</a>
+                    {h.qb_attachment_url && (
+                      <a
+                        href={h.qb_attachment_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          fontSize: 10, fontWeight: 700, padding: "4px 10px",
+                          borderRadius: 6, border: "1px solid #16a34a",
+                          color: "#065f46", textDecoration: "none", background: "#ecfdf5",
+                        }}
+                      >🔗 Open in QuickBooks</a>
+                    )}
+                  </div>
                 )}
               </div>
             );
