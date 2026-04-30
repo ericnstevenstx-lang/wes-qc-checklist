@@ -1,4 +1,4 @@
-const CACHE_NAME = "hardin-qc-v3";
+const CACHE_NAME = "hardin-qc-v4";
 const PRECACHE = ["/", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
