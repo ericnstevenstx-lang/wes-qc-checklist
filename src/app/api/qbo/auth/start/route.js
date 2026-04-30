@@ -11,7 +11,7 @@ export async function GET() {
     const res = NextResponse.redirect(authUrl);
     res.cookies.set("qbo_state", state, {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: "none",
       secure: true,
       maxAge: 600,
       path: "/",
