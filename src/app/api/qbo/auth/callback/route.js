@@ -13,6 +13,19 @@ export async function GET(req) {
   const cookieState = req.cookies.get("qbo_state")?.value;
   const origin = url.origin;
 
+  // DEBUG: log everything we see so we can diagnose
+  console.log("[QBO callback]", {
+    hasCode: !!code,
+    state,
+    cookieState,
+    realmId,
+    error,
+    env: process.env.QBO_ENV,
+    hasClientId: !!process.env.QBO_CLIENT_ID,
+    hasClientSecret: !!process.env.QBO_CLIENT_SECRET,
+    redirectUri: process.env.QBO_REDIRECT_URI,
+  });
+
   if (error) {
     return NextResponse.redirect(`${origin}/?qbo=error&reason=${encodeURIComponent(error)}`);
   }
@@ -20,7 +33,8 @@ export async function GET(req) {
     return NextResponse.redirect(`${origin}/?qbo=error&reason=missing_params`);
   }
   if (!state || state !== cookieState) {
-    return NextResponse.redirect(`${origin}/?qbo=error&reason=state_mismatch`);
+    const reason = `state_mismatch|url=${state || "null"}|cookie=${cookieState || "null"}`;
+    return NextResponse.redirect(`${origin}/?qbo=error&reason=${encodeURIComponent(reason)}`);
   }
 
   try {
