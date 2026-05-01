@@ -55,7 +55,16 @@ export async function exchangeCodeForToken(code) {
   });
   if (!r.ok) {
     const txt = await r.text().catch(() => "");
-    throw new Error(`Token exchange failed (${r.status}): ${txt}`);
+    const debug = {
+      status: r.status,
+      body: txt.slice(0, 300),
+      tokenUrl: QBO_TOKEN_URL,
+      redirectUriSent: redirectUri(),
+      clientIdLen: (process.env.QBO_CLIENT_ID || "").length,
+      clientSecretLen: (process.env.QBO_CLIENT_SECRET || "").length,
+      qboEnv: process.env.QBO_ENV,
+    };
+    throw new Error(`TokenExchange:${JSON.stringify(debug)}`);
   }
   return await r.json();
 }
