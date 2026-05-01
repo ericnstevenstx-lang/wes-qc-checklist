@@ -52,16 +52,19 @@ export default function InvoicePullModal({ onClose, onCreated }) {
   const [qboStatus, setQboStatus] = useState({ loading: true, connected: false });
   const [pulling, setPulling] = useState(false);
 
+   const refreshQboStatus = async () => {
+    setQboStatus({ loading: true, connected: false });
+    try {
+      const r = await fetch("/api/qbo/status", { cache: "no-store" });
+      const j = await r.json();
+      setQboStatus({ loading: false, ...j });
+    } catch (e) {
+      setQboStatus({ loading: false, connected: false });
+    }
+  };
+
   useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch("/api/qbo/status");
-        const j = await r.json();
-        setQboStatus({ loading: false, ...j });
-      } catch (e) {
-        setQboStatus({ loading: false, connected: false });
-      }
-    })();
+    refreshQboStatus();
   }, []);
 
   const setH = (k, v) => setHeader((p) => ({ ...p, [k]: v }));
