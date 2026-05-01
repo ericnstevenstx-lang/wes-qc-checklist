@@ -43,12 +43,11 @@ export async function GET(req) {
   if (!code || !realmId) {
     return NextResponse.redirect(`${origin}/?qbo=error&reason=missing_params`);
   }
-
   const stateCheck = validateState(state);
   if (!stateCheck.ok) {
-    return NextResponse.redirect(`${origin}/?qbo=error&reason=${encodeURIComponent(stateCheck.reason)}`);
+    // User likely cancelled or hit back. Don't surface state errors as a hard error to user.
+    return NextResponse.redirect(`${origin}/`);
   }
-
   try {
     const tokenResponse = await exchangeCodeForToken(code);
     await saveTokens({ realmId, tokenResponse });
