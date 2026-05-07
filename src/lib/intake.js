@@ -45,24 +45,36 @@ export async function createInvoiceLinesAndItems({ header, lines }) {
     });
     const lineId = lineRows[0].id;
 
-    const itemRows = Array.from({ length: qty }, (_, i) => ({
-      equipment_type: line.equipmentType || null,
-      manufacturer: line.manufacturer || null,
-      status: "received",
-      order_number: header.orderNumber?.trim() || null,
-      invoice_number: header.invoiceNumber.trim(),
-      source_job_site: header.jobSite?.trim() || null,
-      customer_origin: header.customerName?.trim() || null,
-      invoice_line_id: lineId,
-      line_item_index: i + 1,
-    }));
+    // Build per-item rows. Provide values for NOT NULL columns:
+    //   id (generated), serial_number (placeholder until labeled),
+    //   grade (default 'Pending'), location (default 'Receiving'),
+    //   attributes (empty json), status, equipment_type.
+    const ts = Date.now();
+    const itemRows = Array.from({ length: qty }, (_, i) => {
+      const itemIdx = i + 1;
+      return {
+        id: `inv-${ts}-${idx}-${itemIdx}`,
+        serial_number: `PENDING-${header.invoiceNumber.trim()}-L${idx + 1}-${itemIdx}`,
+        equipment_type: line.equipmentType,
+        grade: "Pending",
+        location: "Receiving",
+        manufacturer: line.manufacturer || null,
+        status: "received",
+        order_number: header.orderNumber?.trim() || null,
+        invoice_number: header.invoiceNumber.trim(),
+        source_job_site: header.jobSite?.trim() || null,
+        customer_origin: header.customerName?.trim() || null,
+        invoice_line_id: lineId,
+        line_item_index: itemIdx,
+        attributes: {},
+      };
+    });
     await sb("inventory_items", {
       method: "POST",
       body: JSON.stringify(itemRows),
     });
     totalItems += qty;
   }
-
   return {
     lineCount: lines.length,
     itemCount: totalItems,
