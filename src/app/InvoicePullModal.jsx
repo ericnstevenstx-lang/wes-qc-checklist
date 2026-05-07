@@ -99,10 +99,10 @@ export default function InvoicePullModal({ onClose, onCreated }) {
         return;
       }
       const data = await r.json();
-      // Auto-fill customer if we got it
+      // Auto-fill customer/job site from QBO. Pulled data takes precedence over stale form state.
       setHeader((p) => ({
         ...p,
-        customerName: p.customerName || data.customerName || "",
+        customerName: data.customerName || p.customerName || "",
       }));
       // Map QBO lines into the form. User still picks equipment type / manufacturer per line.
       const mapped = (data.lines || []).map((l) => ({
